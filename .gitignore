@@ -1,0 +1,7 @@
+#Ignore build folder
+build/
+build-web/
+*.bat
+*.sh
+data/
+web-data/
