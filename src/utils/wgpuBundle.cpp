@@ -67,7 +67,7 @@ void WgpuBundle::InitializeInstance()
 
     // Adapter
     wgpu::RequestAdapterOptions options{};
-    options.backendType = wgpu::BackendType::Null;
+    options.backendType = wgpu::BackendType::Undefined;
     if (wgpuRequestAdapter(this->instance, this->adapter, &options) < 0)
         throw std::runtime_error("Failed to request WebGPU adapter.");
 
@@ -111,8 +111,6 @@ void WgpuBundle::InitializeInstance()
     }
     if (wgpuCreateDevice(this->instance, this->adapter, this->device, &deviceDesc) < 0)
         throw std::runtime_error("Failed to create WebGPU device.");
-
-    
 
     wgpu::AdapterInfo info;
     adapter.GetInfo(&info);

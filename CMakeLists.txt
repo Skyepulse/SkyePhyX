@@ -1,6 +1,8 @@
-cmake_minimum_required(VERSION 4.0)
-project(SkyePhyX)
-set(CMAKE_CXX_STANDARD 20)
+cmake_minimum_required(VERSION 3.25)
+
+set(CMAKE_CXX_FLAGS "/std:c++17" CACHE STRING "" FORCE)
+
+project(SkyePhyX LANGUAGES C CXX)
 
 # Necessary to work for assimp and dawn
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
@@ -32,7 +34,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(eigen)
 
-# SKYEGRID CONFIGURATION
+# CONFIGURATION
 
 set(IMGUI_DIR ${imgui_SOURCE_DIR})
 set(IMGUI_SOURCES
@@ -46,11 +48,11 @@ set(IMGUI_BACKEND_SOURCES
     ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
     ${IMGUI_DIR}/backends/imgui_impl_wgpu.cpp
 )
-target_sources(Skyegrid PRIVATE 
+target_sources(SkyePhyX PRIVATE 
     ${IMGUI_SOURCES} 
     ${IMGUI_BACKEND_SOURCES}
 )
-target_include_directories(Skyegrid PRIVATE 
+target_include_directories(SkyePhyX PRIVATE 
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
     ${CMAKE_SOURCE_DIR}/includes

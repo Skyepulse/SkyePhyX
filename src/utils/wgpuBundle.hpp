@@ -28,6 +28,15 @@ public:
     wgpu::TextureFormat& GetSwapchainFormat() { return this->swapchainFormat; }
     wgpu::Limits& GetLimits() { return this->limits; }
     GLFWwindow* GetGLFWWindow() { return this->window; }
+    wgpu::RenderPassColorAttachment GetColorAttachment(wgpu::TextureView& view)
+    {
+        wgpu::RenderPassColorAttachment colorAttachment{};
+        colorAttachment.view = view;
+        colorAttachment.loadOp = wgpu::LoadOp::Clear;
+        colorAttachment.storeOp = wgpu::StoreOp::Store;
+        colorAttachment.clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
+        return colorAttachment;
+    }
 
     WindowFormat GetWindowFormat()
     {
