@@ -32,6 +32,7 @@ GameManager::GameManager(): window(nullptr, &glfwDestroyWindow)
 
     this->wgpuBundle = std::make_unique<WgpuBundle>(windowFormat);
     this->renderEngine = std::make_unique<RenderEngine>(this->wgpuBundle.get());
+    this->solver = std::make_unique<Solver>();
 
     this->correctlyInitialized = true;
 }
@@ -57,6 +58,9 @@ void GameManager::RunMainLoop()
         this->UpdateCurrentTime();
         this->ProcessEvents(this->deltaTime);
 
+        this->solver->Step();
+        this->renderEngine->UpdateInstanceBuffer(this->solver->solverBodies);
+
         this->renderEngine->Render(static_cast<void*>(&this->renderInfo));
 
         this->wgpuBundle->GetSurface().Present();
@@ -70,6 +74,56 @@ void GameManager::RunMainLoop()
 void GameManager::ProcessEvents(float deltaTime)
 {
     glfwPollEvents();
+
+    Camera* camera = this->renderEngine->GetCamera();
+
+    if (glfwGetMouseButton(this->window.get(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+    {
+        double mouseX, mouseY;
+        glfwGetCursorPos(this->window.get(), &mouseX, &mouseY);
+
+        if (!this->mouseClicked)
+        {
+            this->lastMouseX = static_cast<float>(mouseX);
+            this->lastMouseY = static_cast<float>(mouseY);
+            this->mouseClicked = true;
+        }
+        else
+        {
+            float deltaX = static_cast<float>(mouseX) - this->lastMouseX;
+            float deltaY = static_cast<float>(mouseY) - this->lastMouseY;
+
+            camera->RotateByMouseMovement(deltaX, deltaY);
+
+            this->lastMouseX = static_cast<float>(mouseX);
+            this->lastMouseY = static_cast<float>(mouseY);
+        }
+    }
+    else
+    {
+        this->mouseClicked = false;
+    }
+    Eigen::Vector3f movementDelta(0.0f, 0.0f, 0.0f);
+    if (glfwGetKey(this->window.get(), GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(this->window.get(), GLFW_KEY_Z) == GLFW_PRESS)
+        movementDelta.z() += deltaTime * 60.0f;
+    if (glfwGetKey(this->window.get(), GLFW_KEY_S) == GLFW_PRESS)
+        movementDelta.z() -= deltaTime * 60.0f;
+    if (glfwGetKey(this->window.get(), GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(this->window.get(), GLFW_KEY_Q) == GLFW_PRESS)
+        movementDelta.x() -= deltaTime * 60.0f;
+    if (glfwGetKey(this->window.get(), GLFW_KEY_D) == GLFW_PRESS)
+        movementDelta.x() += deltaTime * 60.0f;
+    //Z, x for up and down
+    if (glfwGetKey(this->window.get(), GLFW_KEY_DOWN) == GLFW_PRESS)
+        movementDelta.y() -= deltaTime * 60.0f;
+    if (glfwGetKey(this->window.get(), GLFW_KEY_UP) == GLFW_PRESS)
+        movementDelta.y() += deltaTime * 60.0f;
+    
+    camera->MoveLocal(movementDelta);
+
+    WindowFormat currentFormat = this->wgpuBundle->GetWindowFormat();
+    this->renderInfo.width = static_cast<uint32_t>(currentFormat.width);
+    this->renderInfo.height = static_cast<uint32_t>(currentFormat.height);
+    this->renderInfo.resizeNeeded = currentFormat.resizeNeeded;
 }
 
 //================================//

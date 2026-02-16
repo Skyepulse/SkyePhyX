@@ -5,6 +5,7 @@
 #include "utils/wgpuBundle.hpp"
 #include "rendering/RenderEngine.hpp"
 #include "constants.hpp"
+#include "physics/solver.hpp"
 
 //================================//
 class GameManager
@@ -24,6 +25,7 @@ public:
 
 private:
     std::unique_ptr<RenderEngine> renderEngine;
+    std::unique_ptr<Solver> solver;
     std::unique_ptr<WgpuBundle> wgpuBundle;
     std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window;
 

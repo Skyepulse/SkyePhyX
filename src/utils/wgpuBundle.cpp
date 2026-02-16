@@ -160,8 +160,6 @@ void WgpuBundle::Resize(int newWidth, int newHeight)
     this->currentWidth = newWidth;
     this->currentHeight = newHeight;
     this->ConfigureSurface();
-
-    std::cout << "[wgpuBundle] Window resized to " << newWidth << "x" << newHeight << std::endl;
     this->resizeFlag = true;
 }
 

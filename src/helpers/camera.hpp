@@ -127,6 +127,17 @@ public:
         LookAtDirection(direction);
     }
 
+    //================================//
+    void GetViewMatrix(Eigen::Matrix4f& viewMatrix) const
+    {
+        viewMatrix = this->viewMatrix;
+    }
+
+    //================================//
+    void GetProjectionMatrix(Eigen::Matrix4f& projectionMatrix) const
+    {
+        projectionMatrix = this->projectionMatrix;
+    }
 
 private:
     Eigen::Vector3f position;

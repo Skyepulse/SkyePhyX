@@ -37,6 +37,15 @@ public:
         colorAttachment.clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
         return colorAttachment;
     }
+    wgpu::TextureFormat GetPreferedPresentationFormat() const
+    {
+        if (!this->surface)
+            return wgpu::TextureFormat::Undefined;
+
+        wgpu::SurfaceCapabilities capabilities;
+        surface.GetCapabilities(adapter, &capabilities);
+        return capabilities.formats[0];
+    }
 
     WindowFormat GetWindowFormat()
     {
