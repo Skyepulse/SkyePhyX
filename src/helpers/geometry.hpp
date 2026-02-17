@@ -6,6 +6,8 @@
 #include <Eigen/Geometry>
 
 using Quaternionf = Eigen::Quaternion<float>;
+using Vector6f    = Eigen::Matrix<float, 6, 1>;
+using Matrix6f    = Eigen::Matrix<float, 6, 6>;
 
 // Forward declaration of Solver to avoid circular dependency
 class Solver;
@@ -134,18 +136,143 @@ struct Mesh
     
     Solver* solver;
 
-    // Physics values
-    float mass;
-    float density;
+    // ---- Mass properties ----
+    float mass      = 0.0f;
+    float density   = 0.0f;
+    float friction  = 0.0f;
+    bool isStatic   = false;
 
-    float friction;
+    // For a box with half-extents (hx, hy, hz):
+    //   I_body = diag( m/12*(hy²+hz²), m/12*(hx²+hz²), m/12*(hx²+hy²) )
+    // For a sphere with radius r:
+    //   I_body = diag( 2/5*m*r², ... )
+    Eigen::Matrix3f inertiaTensorBody    = Eigen::Matrix3f::Identity();
+    Eigen::Matrix3f inertiaTensorBodyInv = Eigen::Matrix3f::Identity();
 
-    Eigen::Vector3f velocity;
-    Eigen::Vector3f prevVelocity;
-    Eigen::Vector3f angularVelocity;
-    Eigen::Vector3f prevAngularVelocity;
+    // ---- Linear state ----
+    Eigen::Vector3f velocity     = Eigen::Vector3f::Zero();
+    Eigen::Vector3f prevVelocity = Eigen::Vector3f::Zero();
 
-    bool isStatic;
+    // ---- Angular state ----
+    Eigen::Vector3f angularVelocity     = Eigen::Vector3f::Zero();
+    Eigen::Vector3f prevAngularVelocity = Eigen::Vector3f::Zero();
+
+    Eigen::Vector3f lastPosition = Eigen::Vector3f::Zero();
+    Quaternionf     lastRotation = Quaternionf::Identity();
+    Eigen::Vector3f inertialPosition = Eigen::Vector3f::Zero();
+    Quaternionf     inertialRotation = Quaternionf::Identity();
+
+    float detectionRadius;
+
+    bool isDragged = false;
+    Eigen::Vector3f addedDragVelocity = Eigen::Vector3f::Zero();
+    bool isParticle = false;
+
+    // HELPERS //
+    //================================//
+    Eigen::Matrix3f GetWorldInverseInertiaTensor() const
+    {
+        if (isStatic) return Eigen::Matrix3f::Zero();
+
+        Quaternionf R;
+        transform.GetRotation(R);
+        Eigen::Matrix3f Rmat = R.toRotationMatrix();
+        return Rmat * inertiaTensorBodyInv * Rmat.transpose();
+    }
+
+    //================================//
+    Matrix6f GetGeneralizedMass() const
+    {
+        Matrix6f M = Matrix6f::Zero();
+        if (!isStatic && mass > 0.f)
+        {
+            M.block<3,3>(0,0) = Eigen::Matrix3f::Identity() * mass;
+
+            Quaternionf R;
+            transform.GetRotation(R);
+            Eigen::Matrix3f Rmat = R.toRotationMatrix();
+            M.block<3,3>(3,3) = Rmat * inertiaTensorBody * Rmat.transpose();
+        }
+        return M;
+    }
+
+    //================================//
+    Matrix6f GetGeneralizedMassInverse() const
+    {
+        Matrix6f Minv = Matrix6f::Zero();
+        if (!isStatic && mass > 0.f)
+        {
+            float invM = 1.f / mass;
+            Minv.block<3,3>(0,0) = Eigen::Matrix3f::Identity() * invM;
+            Minv.block<3,3>(3,3) = GetWorldInverseInertiaTensor();
+        }
+        return Minv;
+    }
+
+    //================================//
+    Vector6f GetGeneralizedVelocity() const
+    {
+        Vector6f v;
+        v.head<3>() = velocity;
+        v.tail<3>() = angularVelocity;
+        return v;
+    }
+
+    //================================//
+    void SetGeneralizedVelocity(const Vector6f& v)
+    {
+        velocity = v.head<3>();
+        angularVelocity = v.tail<3>();
+    }
+
+    //================================//
+    void IntegrateRotation(float dt)
+    {
+        if (isStatic || isParticle) return;
+
+        Quaternionf w(0.f, angularVelocity.x(), angularVelocity.y(), angularVelocity.z());
+
+        Quaternionf q;
+        transform.GetRotation(q);
+
+        Quaternionf qdot;
+        qdot.w()   = 0.5f * (w * q).w();
+        qdot.vec() = 0.5f * (w * q).vec();
+        q.w()   += qdot.w()   * dt;
+        q.vec() += qdot.vec() * dt;
+        q.normalize();
+
+        transform.SetRotation(q);
+    }
+
+    //================================//
+    Vector6f GetDisplacementFromInertial() const
+    {
+        Vector6f dx;
+
+        Eigen::Vector3f pos;
+        transform.GetPosition(pos);
+        dx.head<3>() = pos - inertialPosition;
+
+        Quaternionf qCurr;
+        transform.GetRotation(qCurr);
+        Quaternionf dq = qCurr * inertialRotation.conjugate();
+
+        if (dq.w() < 0.f) dq.coeffs() = -dq.coeffs(); // Ensures shortest path
+        
+        float sinHalf = dq.vec().norm();
+        if (sinHalf < 1e-6f)
+        {
+            dx.tail<3>() = 2.f * dq.vec();
+        }
+        else
+        {
+            float halfAngle = std::atan2(sinHalf, dq.w());
+            dx.tail<3>() = (2.f * halfAngle / sinHalf) * dq.vec();
+        }
+
+        return dx;
+    }
 };
 
 #endif // GEOMETRY_HPP

@@ -53,14 +53,30 @@ void GameManager::RunMainLoop()
 
     std::cout << "[INFO][GameManager] Entering main loop...\n";   
 
+    const int MAX_PHYSICS_STEPS = 5;
+    float accumulator = 0.f;
+
     while (!glfwWindowShouldClose(this->window.get()))
     {
         this->UpdateCurrentTime();
         this->ProcessEvents(this->deltaTime);
 
-        this->solver->Step();
-        this->renderEngine->UpdateInstanceBuffer(this->solver->solverBodies);
+        accumulator += this->deltaTime;
 
+        int steps = 0;
+        while (accumulator >= this->solver->stepValue && steps < MAX_PHYSICS_STEPS)
+        {
+            this->solver->Step();
+            accumulator -= this->solver->stepValue;
+            steps++;
+        }
+
+        if (steps == MAX_PHYSICS_STEPS)
+            accumulator = 0.f;
+
+        this->renderEngine->AcquireSwapchainTexture();
+        this->renderEngine->SetSolverStepTime(this->solver->averageStepTime);
+        this->renderEngine->UpdateInstanceBuffer(this->solver->solverBodies);
         this->renderEngine->Render(static_cast<void*>(&this->renderInfo));
 
         this->wgpuBundle->GetSurface().Present();

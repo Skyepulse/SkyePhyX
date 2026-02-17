@@ -99,8 +99,10 @@ public:
 
     //================================//
     void Initialize();
+    void AcquireSwapchainTexture();
     void Render(void* userData);
     void UpdateInstanceBuffer(Mesh* bodies);
+    void SetSolverStepTime(float time) { this->solverStepTimeMs = time; }
 
     //================================//
     Camera* GetCamera() { return this->camera.get(); }
@@ -121,6 +123,9 @@ private:
     std::vector<float> gpuFrameDrawAccumulator;
     float cpuFrameTimeMs = 0.0f;
     std::vector<float> cpuFrameAccumulator;
+    float solverStepTimeMs = 0.0f;
+
+    std::chrono::steady_clock::time_point cpuStartTime;
 
     //=============== ATLAS =================//
     std::vector<GPUVertex> allVertices;
@@ -147,6 +152,7 @@ private:
     wgpu::Texture depthTexture;
 
     wgpu::Buffer uniformBuffer;
+    wgpu::SurfaceTexture currentTexture;
 
     //================================//
     void InitImGui();

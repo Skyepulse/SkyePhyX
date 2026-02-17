@@ -33,7 +33,13 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+    ImGui::Begin("Performance Metrics");
+    ImGui::Text("GPU Draw Time: %.3f ms", this->gpuFrameTimeDrawMs);
+    ImGui::Text("CPU Frame Time: %.3f ms", this->cpuFrameTimeMs);
+    ImGui::Text("Solver Step Time: %.3f ms", this->solverStepTimeMs);
+    ImGui::Separator();
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    ImGui::End();
 
     ImGui::Render();
     ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), pass.Get());
@@ -51,6 +57,23 @@ void RenderEngine::Initialize()
 }
 
 //================================//
+void RenderEngine::AcquireSwapchainTexture()
+{
+    wgpu::SurfaceTexture ct;
+    wgpu::Surface surface = this->wgpuBundle->GetSurface();
+    surface.GetCurrentTexture(&ct);
+
+    auto status = ct.status;
+    if (status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
+        status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal)
+    {
+        return;
+    }
+
+    this->currentTexture = ct;
+}
+
+//================================//
 void RenderEngine::Render(void* userData)
 {
     auto renderInfo = *static_cast<RenderInfo*>(userData);
@@ -63,21 +86,7 @@ void RenderEngine::Render(void* userData)
         this->BuildResizeDependentResources(static_cast<float>(windowFormat.width), static_cast<float>(windowFormat.height));
     }
 
-    // INIT
-    wgpu::SurfaceTexture currentTexture;
-    wgpu::Surface surface = this->wgpuBundle->GetSurface();
-    surface.GetCurrentTexture(&currentTexture);
-
-    auto status = currentTexture.status;
-    if (status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
-        status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal)
-    {
-        return;
-    }
-
-    auto cpuFrameStart = std::chrono::high_resolution_clock::now();
-
-    wgpu::TextureView swapchainView = currentTexture.texture.CreateView();
+    wgpu::TextureView swapchainView = this->currentTexture.texture.CreateView();
     wgpu::Queue queue = this->wgpuBundle->GetDevice().GetQueue();
     wgpu::CommandEncoder encoder = this->wgpuBundle->GetDevice().CreateCommandEncoder();
 
@@ -158,7 +167,7 @@ void RenderEngine::Render(void* userData)
     this->wgpuBundle->GetDevice().GetQueue().Submit(1, &commandBuffer);
 
     auto cpuFrameEnd = std::chrono::high_resolution_clock::now();
-    double cpuFrameMs = std::chrono::duration<double, std::milli>(cpuFrameEnd - cpuFrameStart).count();
+    double cpuFrameMs = std::chrono::duration<double, std::milli>(cpuFrameEnd - this->cpuStartTime).count();
     this->cpuFrameAccumulator.push_back(static_cast<float>(cpuFrameMs));
     if (this->cpuFrameAccumulator.size() > 10)
         this->cpuFrameAccumulator.erase(this->cpuFrameAccumulator.begin());
@@ -505,6 +514,8 @@ void RenderEngine::BuildBuffers()
 //================================//
 void RenderEngine::UpdateInstanceBuffer(Mesh* bodies)
 {
+    this->cpuStartTime = std::chrono::high_resolution_clock::now();
+
     for (auto& [modelType, batch] : this->modelBatches)
     {
         batch.cpuInstances.clear();

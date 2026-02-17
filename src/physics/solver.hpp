@@ -13,10 +13,20 @@ public:
     Mesh* solverBodies = nullptr;
 
     void Step();
-    void AddBody(ModelType modelType, float density, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& velocity, const Quaternionf rotation, const Eigen::Vector3f& angularVelocity, bool isStatic, const Eigen::Vector3f& color = Eigen::Vector3f(1.0f, 1.0f, 1.0f));
+    void AddBody(ModelType modelType, float density, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& scale, const Eigen::Vector3f& velocity, const Quaternionf rotation, const Eigen::Vector3f& angularVelocity, bool isStatic, const Eigen::Vector3f& color = Eigen::Vector3f(1.0f, 1.0f, 1.0f));
+
+    float stepValue = 1.0f / 60.0f;;
+    float averageStepTime = 0.0f;
 
 private:
-    float stepValue = 16.0f;
+
+    bool postStabilization = true;
+    int numIterations = 10;
+    float alpha = 0.99;
+    float beta = 100000.0f;
+    float gamma = 0.99f;
+
+    std::vector<float> stepTimeAccumulator;
 };
 
 #endif // SOLVER_HPP
