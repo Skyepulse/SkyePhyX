@@ -19,6 +19,12 @@ static void Mat4Perspective(float fovY, float aspect, float nearPlane, float far
 }
 
 //================================//
+void Camera::UpdateProjectionMatrix()
+{
+    Mat4Perspective(this->fovY, this->aspectRatio, this->nearPlane, this->farPlane, this->projectionMatrix);
+}
+
+//================================//
 void Camera::UpdateViewMatrix()
 {
     Eigen::Vector3f target = position + forward;

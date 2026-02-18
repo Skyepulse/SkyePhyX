@@ -103,7 +103,7 @@ namespace GeometryGenerator
             {
                 uint32_t a = i * (slices + 1) + j;
                 uint32_t b = a + slices + 1;
-                mesh.indices.insert(mesh.indices.end(), { a, b, a + 1, a + 1, b, b + 1 });
+                mesh.indices.insert(mesh.indices.end(), { a, a + 1, b, a + 1, b + 1, b });            
             }
         }
 

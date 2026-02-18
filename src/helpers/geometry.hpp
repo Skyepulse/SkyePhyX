@@ -2,15 +2,14 @@
 #define GEOMETRY_HPP
 
 #include <cmath>
-#include <Eigen/Core>
-#include <Eigen/Geometry>
+#include "math.hpp"
 
-using Quaternionf = Eigen::Quaternion<float>;
 using Vector6f    = Eigen::Matrix<float, 6, 1>;
 using Matrix6f    = Eigen::Matrix<float, 6, 6>;
 
 // Forward declaration of Solver to avoid circular dependency
 class Solver;
+struct Force;
 
 //================================//
 enum ModelType
@@ -49,6 +48,12 @@ class Transform
 {
 public:
     Transform() : position(Eigen::Vector3f::Zero()), rotation(Quaternionf::Identity()), scale(Eigen::Vector3f::Ones()) {}
+
+    //================================//
+    Eigen::Vector3f TransformPoint(const Eigen::Vector3f& point) const
+    {
+        return rotation * (scale.asDiagonal() * point) + position;
+    }
 
     //================================//
     void SetPosition(const Eigen::Vector3f& position)
@@ -130,6 +135,7 @@ struct Mesh
 
     Transform transform;
     Mesh* next = nullptr;
+    std::vector<Force*> forces;
 
     ModelType modelType;
     Eigen::Vector3f color;
@@ -142,10 +148,6 @@ struct Mesh
     float friction  = 0.0f;
     bool isStatic   = false;
 
-    // For a box with half-extents (hx, hy, hz):
-    //   I_body = diag( m/12*(hy²+hz²), m/12*(hx²+hz²), m/12*(hx²+hy²) )
-    // For a sphere with radius r:
-    //   I_body = diag( 2/5*m*r², ... )
     Eigen::Matrix3f inertiaTensorBody    = Eigen::Matrix3f::Identity();
     Eigen::Matrix3f inertiaTensorBodyInv = Eigen::Matrix3f::Identity();
 
@@ -256,20 +258,7 @@ struct Mesh
 
         Quaternionf qCurr;
         transform.GetRotation(qCurr);
-        Quaternionf dq = qCurr * inertialRotation.conjugate();
-
-        if (dq.w() < 0.f) dq.coeffs() = -dq.coeffs(); // Ensures shortest path
-        
-        float sinHalf = dq.vec().norm();
-        if (sinHalf < 1e-6f)
-        {
-            dx.tail<3>() = 2.f * dq.vec();
-        }
-        else
-        {
-            float halfAngle = std::atan2(sinHalf, dq.w());
-            dx.tail<3>() = (2.f * halfAngle / sinHalf) * dq.vec();
-        }
+        dx.tail<3>() = RotationDifference(qCurr, inertialRotation);
 
         return dx;
     }

@@ -304,7 +304,7 @@ void RenderEngine::BuildPipeline()
     // 2. Bind Group Layout
     wgpu::BindGroupLayoutEntry entries[2]{};
     entries[0].binding = 0;
-    entries[0].visibility = wgpu::ShaderStage::Vertex;
+    entries[0].visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
     entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
 
     entries[1].binding = 1;

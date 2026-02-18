@@ -109,7 +109,7 @@ void GameManager::ProcessEvents(float deltaTime)
             float deltaX = static_cast<float>(mouseX) - this->lastMouseX;
             float deltaY = static_cast<float>(mouseY) - this->lastMouseY;
 
-            camera->RotateByMouseMovement(deltaX, deltaY);
+            camera->RotateByMouseMovement(-deltaX, -deltaY);
 
             this->lastMouseX = static_cast<float>(mouseX);
             this->lastMouseY = static_cast<float>(mouseY);
@@ -133,6 +133,10 @@ void GameManager::ProcessEvents(float deltaTime)
         movementDelta.y() -= deltaTime * 60.0f;
     if (glfwGetKey(this->window.get(), GLFW_KEY_UP) == GLFW_PRESS)
         movementDelta.y() += deltaTime * 60.0f;
+    if (glfwGetKey(this->window.get(), GLFW_KEY_LEFT) == GLFW_PRESS)
+        camera->RotateByMouseMovement(-deltaTime * 60.0f, 0.0f);
+    if (glfwGetKey(this->window.get(), GLFW_KEY_RIGHT) == GLFW_PRESS)
+        camera->RotateByMouseMovement(deltaTime * 60.0f, 0.0f);
     
     camera->MoveLocal(movementDelta);
 

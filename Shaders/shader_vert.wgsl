@@ -39,6 +39,7 @@ struct VertexOutput
     @location(0) normal: vec3<f32>,
     @location(1) UV: vec2<f32>,
     @location(2) color: vec4<f32>,
+    @location(3) worldPos: vec3<f32>,
 };
 
 //==============//
@@ -62,6 +63,8 @@ fn vs(input: VertexInput, @builtin(instance_index) instanceIndex: u32) -> Vertex
     
     output.UV = input.UV;
     output.color = instance.color;
+
+    output.worldPos = worldPosition.xyz;
     
     return output;
 }

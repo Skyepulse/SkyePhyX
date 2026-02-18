@@ -23,6 +23,7 @@ public:
     void SetFOV(float fovY)
     {
         this->fovY = fovY;
+        UpdateProjectionMatrix();
         UpdateViewMatrix();
     }
 
@@ -30,6 +31,7 @@ public:
     void SetAspectRatio(float aspectRatio)
     {
         this->aspectRatio = aspectRatio;
+        UpdateProjectionMatrix();
         UpdateViewMatrix();
     }
 
@@ -38,6 +40,7 @@ public:
     {
         this->nearPlane = nearPlane;
         this->farPlane = farPlane;
+        UpdateProjectionMatrix();
         UpdateViewMatrix();
     }
 
@@ -163,6 +166,7 @@ private:
 
     void UpdateCameraVectors();
     void UpdateViewMatrix();
+    void UpdateProjectionMatrix();
 };
 
 #endif // CAMERA_HPP
