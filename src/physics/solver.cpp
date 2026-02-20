@@ -1,6 +1,7 @@
 #include "solver.hpp"
 #include <chrono>
 #include <corecrt_math_defines.h>
+#include <iostream>
 
 const Eigen::Vector3f GRAVITY(0.0f, -9.81f, 0.0f);
 
@@ -13,11 +14,6 @@ const float MAX_ROTATION_VELOCITY = 50.0f;
 //================================//
 Solver::Solver(): solverBodies(nullptr)
 {
-    Mesh* cube = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 0.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
-    Mesh* sphere = AddBody(ModelType_Sphere, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 5.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
-    Force* spring = new Spring(this, cube, Eigen::Vector3f(0.5f, 0.5f, 0.5f), sphere, Eigen::Vector3f(0.0f, 0.0f, 0.0f), 100.0f, 10.0f, true);
-
-    Mesh* ground = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(20.0f, 1.0f, 20.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
 }
 
 //================================//
@@ -25,6 +21,38 @@ Solver::~Solver()
 {
     while(solverBodies)
         delete solverBodies;
+}
+
+//================================//
+void Solver::Start()
+{
+    this->Clear();
+    //Mesh* cube = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(4.0f, 5.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
+    //cube->name = "Cube";
+    //Mesh* sphere = AddBody(ModelType_Sphere, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 5.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
+    //sphere->name = "Sphere";
+    //Force* spring = new Spring(this, cube, Eigen::Vector3f(0.5f, 0.5f, 0.5f), sphere, Eigen::Vector3f(0.0f, 0.0f, 0.0f), INFINITY, 10.0f, true);
+    Mesh* ground = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(20.0f, 1.0f, 20.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
+    ground->name = "Ground";
+
+    //Mesh* cube1 = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(-4.0f, 5.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::UnitRandom(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
+    //cube1->name = "Cube1";
+
+    Quaternionf rot = Eigen::AngleAxisf(M_PI / 4.0f, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(M_PI / 6.0f, Eigen::Vector3f::UnitX());
+    Mesh* cube2 = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 10.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), rot, Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
+    cube2->name = "Cube2";
+}
+
+//================================//
+void Solver::Clear()
+{
+    while(solverBodies)
+        delete solverBodies;
+    solverBodies = nullptr;
+
+    while(solverForces)
+        delete solverForces;
+    solverForces = nullptr;
 }
 
 //================================//
@@ -94,12 +122,17 @@ void Solver::Step()
             float distance = (pos1 - pos2).norm();
             if (distance < mesh->detectionRadius + other->detectionRadius)
             {
-                // ADD MANIFOLD IF NOT ALREADY CONSTRAINED
-                // TODO
+                if (!isConstrainedTo(mesh, other))
+                {
+                    Manifold* manifold = new Manifold(this, mesh, other);
+                    std::cout << "New collision detected between Mesh " << mesh->name << " and Mesh " << other->name << std::endl;
+                }
             }
         }
     }
 
+    this->lineData.clear();
+    this->debugPointData.clear();
     // 2. Forces Warmstarting
     for (Force* force = solverForces; force != nullptr;)
     {
@@ -107,12 +140,32 @@ void Solver::Step()
 
         if (!isUsed)
         {
+            Manifold* manifold = dynamic_cast<Manifold*>(force); // Non colliding but close manifolds
+            if (manifold)
+            {
+                Eigen::Vector3f p1, p2;
+                manifold->bodyA->transform.GetPosition(p1);
+                manifold->bodyB->transform.GetPosition(p2);
+
+                float dist = (p1 - p2).norm();
+                float threshold = manifold->bodyA->detectionRadius + manifold->bodyB->detectionRadius;
+
+                if (dist < threshold * 1.1f) // Keep alive with small hysteresis
+                {
+                    force->AddLineData(this->lineData);
+                    force = force->next;
+                    continue;
+                }
+            }
+
             Force* next = force->next;
             delete force; 
             force = next;
             continue;   
         }
 
+        force->AddLineData(this->lineData);
+        force->AddDebugPointData(this->debugPointData);
         const int numConstraints = force->numConstraints();
         for (int i = 0; i < numConstraints; ++i)
         {
@@ -335,7 +388,7 @@ void Solver::Step()
 
                     // Diagonal matrix, of sum of columns of hessian
                     Matrix6f H = force->constraintPoints[i].H;
-                    Matrix6f G;
+                    Matrix6f G = Matrix6f::Zero();
                     for (int j = 0; j < 6; ++j)
                     {
                         G(j, j) = H.col(j).norm() * std::abs(f);

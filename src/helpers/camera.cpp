@@ -62,7 +62,7 @@ void Camera::UpdateCameraVectors()
 //================================//
 Camera::Camera(float aspectRatio, float fovY = Math_PI / 4.0f, float nearPlane = 0.1f, float farPlane = 100.0f) : aspectRatio(aspectRatio), fovY(fovY), nearPlane(nearPlane), farPlane(farPlane)
 {
-    this->position = Eigen::Vector3f(0.0f, 0.0f, 5.0f);
+    this->position = Eigen::Vector3f(0.0f, 0.0f, 20.0f);
     this->worldUp = Eigen::Vector3f(0.0f, 1.0f, 0.0f);
     this->forward = Eigen::Vector3f(0.0f, 0.0f, -1.0f);
 

@@ -31,8 +31,8 @@ GameManager::GameManager(): window(nullptr, &glfwDestroyWindow)
     this->renderInfo.height = static_cast<uint32_t>(INITIAL_WINDOW_HEIGHT);
 
     this->wgpuBundle = std::make_unique<WgpuBundle>(windowFormat);
-    this->renderEngine = std::make_unique<RenderEngine>(this->wgpuBundle.get());
     this->solver = std::make_unique<Solver>();
+    this->renderEngine = std::make_unique<RenderEngine>(this->wgpuBundle.get(), this->solver.get());
 
     this->correctlyInitialized = true;
 }
@@ -56,6 +56,8 @@ void GameManager::RunMainLoop()
     const int MAX_PHYSICS_STEPS = 5;
     float accumulator = 0.f;
 
+    this->solver->Start();
+
     while (!glfwWindowShouldClose(this->window.get()))
     {
         this->UpdateCurrentTime();
@@ -66,7 +68,11 @@ void GameManager::RunMainLoop()
         int steps = 0;
         while (accumulator >= this->solver->stepValue && steps < MAX_PHYSICS_STEPS)
         {
-            this->solver->Step();
+            if (!this->paused || this->nextPass)
+            {
+                this->solver->Step();
+                this->nextPass = false;
+            }
             accumulator -= this->solver->stepValue;
             steps++;
         }
@@ -77,6 +83,8 @@ void GameManager::RunMainLoop()
         this->renderEngine->AcquireSwapchainTexture();
         this->renderEngine->SetSolverStepTime(this->solver->averageStepTime);
         this->renderEngine->UpdateInstanceBuffer(this->solver->solverBodies);
+        this->renderEngine->UpdateLineBuffer(this->solver->lineData);
+        this->renderEngine->UpdateDebugPointBuffer(this->solver->debugPointData);
         this->renderEngine->Render(static_cast<void*>(&this->renderInfo));
 
         this->wgpuBundle->GetSurface().Present();
@@ -92,6 +100,9 @@ void GameManager::ProcessEvents(float deltaTime)
     glfwPollEvents();
 
     Camera* camera = this->renderEngine->GetCamera();
+
+    bool isShiftPressed = glfwGetKey(this->window.get(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(this->window.get(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+    float speed = isShiftPressed ? 60.0f : 10.0f;
 
     if (glfwGetMouseButton(this->window.get(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
     {
@@ -121,18 +132,18 @@ void GameManager::ProcessEvents(float deltaTime)
     }
     Eigen::Vector3f movementDelta(0.0f, 0.0f, 0.0f);
     if (glfwGetKey(this->window.get(), GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(this->window.get(), GLFW_KEY_Z) == GLFW_PRESS)
-        movementDelta.z() += deltaTime * 60.0f;
+        movementDelta.z() += deltaTime * speed;
     if (glfwGetKey(this->window.get(), GLFW_KEY_S) == GLFW_PRESS)
-        movementDelta.z() -= deltaTime * 60.0f;
+        movementDelta.z() -= deltaTime * speed;
     if (glfwGetKey(this->window.get(), GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(this->window.get(), GLFW_KEY_Q) == GLFW_PRESS)
-        movementDelta.x() -= deltaTime * 60.0f;
+        movementDelta.x() -= deltaTime * speed;
     if (glfwGetKey(this->window.get(), GLFW_KEY_D) == GLFW_PRESS)
-        movementDelta.x() += deltaTime * 60.0f;
+        movementDelta.x() += deltaTime * speed;
     //Z, x for up and down
     if (glfwGetKey(this->window.get(), GLFW_KEY_DOWN) == GLFW_PRESS)
-        movementDelta.y() -= deltaTime * 60.0f;
+        movementDelta.y() -= deltaTime * speed;
     if (glfwGetKey(this->window.get(), GLFW_KEY_UP) == GLFW_PRESS)
-        movementDelta.y() += deltaTime * 60.0f;
+        movementDelta.y() += deltaTime * speed;
     if (glfwGetKey(this->window.get(), GLFW_KEY_LEFT) == GLFW_PRESS)
         camera->RotateByMouseMovement(-deltaTime * 60.0f, 0.0f);
     if (glfwGetKey(this->window.get(), GLFW_KEY_RIGHT) == GLFW_PRESS)
@@ -144,6 +155,21 @@ void GameManager::ProcessEvents(float deltaTime)
     this->renderInfo.width = static_cast<uint32_t>(currentFormat.width);
     this->renderInfo.height = static_cast<uint32_t>(currentFormat.height);
     this->renderInfo.resizeNeeded = currentFormat.resizeNeeded;
+
+    bool pKeyPressed = glfwGetKey(this->window.get(), GLFW_KEY_P) == GLFW_PRESS;
+    if (pKeyPressed && !this->pKeyWasPressed)
+        this->paused = !this->paused;
+    this->pKeyWasPressed = pKeyPressed;
+
+    bool nextPassKeyPressed = glfwGetKey(this->window.get(), GLFW_KEY_N) == GLFW_PRESS;
+    if (nextPassKeyPressed && !this->nextPassKeyWasPressed)
+        this->nextPass = true;
+    this->nextPassKeyWasPressed = nextPassKeyPressed;
+
+    bool restartKeyPressed = glfwGetKey(this->window.get(), GLFW_KEY_R) == GLFW_PRESS;
+    if (restartKeyPressed && !this->restartKeyWasPressed)
+        this->solver->Start();
+    this->restartKeyWasPressed = restartKeyPressed;
 }
 
 //================================//

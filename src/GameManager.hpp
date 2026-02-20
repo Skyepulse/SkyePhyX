@@ -41,6 +41,14 @@ private:
     float lastMouseY = 0.0f;
     bool mouseClicked = false;
 
+    bool paused = false;
+    bool pKeyWasPressed = false;
+
+    bool nextPass = false;
+    bool nextPassKeyWasPressed = false;
+
+    bool restartKeyWasPressed = false;
+
     //================================//
     void ProcessEvents(float deltaTime);
     void UpdateCurrentTime();

@@ -109,3 +109,20 @@ void Spring::ComputeDerivatives(Mesh* mesh)
         constraintPoints[0].H.block<3,3>(3,3) = drr;
     }
 }
+
+//================================//
+void Spring::AddLineData(std::vector<GPULineData>& data) const
+{
+    // Transform the points rA and rB into world position
+    Eigen::Vector3f rAWorld = this->bodyA ? this->bodyA->transform.TransformPoint(this->rA) : this->rA;
+    Eigen::Vector3f rBWorld = this->bodyB->transform.TransformPoint(this->rB);
+    Eigen::Vector4f color;
+    color << 0.0f, 1.0f, 0.0f, 1.0f;
+
+    GPULineData lineData{};
+    Eigen::Map<Eigen::Vector3f>(lineData.start) = rAWorld;
+    Eigen::Map<Eigen::Vector3f>(lineData.end) = rBWorld;
+    Eigen::Map<Eigen::Vector4f>(lineData.color) = color;
+
+    data.push_back(lineData);
+}

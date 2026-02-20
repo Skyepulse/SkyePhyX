@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include "math.hpp"
+#include <string>
 
 using Vector6f    = Eigen::Matrix<float, 6, 1>;
 using Matrix6f    = Eigen::Matrix<float, 6, 6>;
@@ -41,6 +42,21 @@ struct GPUMat3x3
     float col2[4];
 };
 static_assert(sizeof(GPUMat3x3) == 48, "Must match WGSL mat3x3 layout");
+
+//================================//
+struct GPULineData
+{
+    float start[3];
+    float end[3];
+    float color[4];
+};
+
+struct GPUDebugPointData
+{
+    float position[3];
+    float _pad;
+    float color[4];
+};
 
 
 //================================//
@@ -141,6 +157,8 @@ struct Mesh
     Eigen::Vector3f color;
     
     Solver* solver;
+
+    std::string name = "Mesh";
 
     // ---- Mass properties ----
     float mass      = 0.0f;

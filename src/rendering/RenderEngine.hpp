@@ -75,18 +75,15 @@ static_assert(sizeof(Uniform) == 128, "Uniform must be tightly packed to 128 byt
 class RenderEngine
 {
 public:
-    RenderEngine(WgpuBundle* wgpuBundle)
+    RenderEngine(WgpuBundle* wgpuBundle, Solver* solver): solver(solver), wgpuBundle(wgpuBundle)
     {
-        this->wgpuBundle = wgpuBundle;
         WindowFormat windowFormat = wgpuBundle->GetWindowFormat();
-
         this->camera = std::make_unique<Camera>(
             static_cast<float>(windowFormat.width) / static_cast<float>(windowFormat.height),
             45.0f * (3.14159265f / 180.0f),
             0.1f,
             100.0f
         );
-
     }
 
     ~RenderEngine()
@@ -102,25 +99,33 @@ public:
     void AcquireSwapchainTexture();
     void Render(void* userData);
     void UpdateInstanceBuffer(Mesh* bodies);
+    void UpdateLineBuffer(std::vector<GPULineData> lineData);
+    void UpdateDebugPointBuffer(std::vector<GPUDebugPointData> debugPointData);
     void SetSolverStepTime(float time) { this->solverStepTimeMs = time; }
 
     //================================//
     Camera* GetCamera() { return this->camera.get(); }
 
+    bool debug = true;
+
 private:
     WgpuBundle* wgpuBundle;
+    Solver* solver;
     std::unique_ptr<Camera> camera;
 
     bool resizeFlag = true;
 
     wgpu::QuerySet gpuTimingQuerySet;
     wgpu::Buffer gpuTimingResolveBuffer;
-    wgpu::Buffer gpuTimingReadbackBuffers[2];
+    wgpu::Buffer gpuTimingReadbackBuffers[4];
     bool gpuTimingMapInFlight = false;
     int currentTimingWriteBuffer = 0;
 
     float gpuFrameTimeDrawMs = 0.0f;
     std::vector<float> gpuFrameDrawAccumulator;
+    float gpuLineFrameTimeDrawMs = 0.0f;
+    std::vector<float> gpuLineFrameDrawAccumulator;
+
     float cpuFrameTimeMs = 0.0f;
     std::vector<float> cpuFrameAccumulator;
     float solverStepTimeMs = 0.0f;
@@ -133,26 +138,44 @@ private:
     wgpu::Buffer atlasVertexBuffer;
     wgpu::Buffer atlasIndexBuffer;
 
-    //============== WGPU OBJECTS ==================//
+    //============== WGPU OBJECTS (Normal Pipeline) ==================//
     wgpu::ShaderModule shaderModule;
-
     wgpu::PipelineLayout pipelineLayout;
     wgpu::RenderPipeline renderPipeline;
-
     wgpu::BindGroupLayout instanceBindGroupLayout;
     wgpu::BindGroup instanceBindGroup;
-
     wgpu::Buffer instanceDataBuffer;
     uint32_t maxInstances = 0;
     std::vector<GPUInstanceData> packedInstances;
-
     std::unordered_map<ModelType, ModelBatch> modelBatches;
 
     wgpu::TextureView depthTextureView;
     wgpu::Texture depthTexture;
-
     wgpu::Buffer uniformBuffer;
     wgpu::SurfaceTexture currentTexture;
+
+    //============== WGPU OBJECTS (Lines Pipeline) ==================//
+    wgpu::ShaderModule lineShaderModule;
+    wgpu::PipelineLayout linePipelineLayout;
+    wgpu::RenderPipeline lineRenderPipeline;
+    wgpu::BindGroupLayout lineBindGroupLayout;
+    wgpu::BindGroup lineBindGroup;
+    wgpu::Buffer lineVertexBuffer;
+    uint32_t maxLines = 0;
+    uint32_t numLines = 0;
+
+    //============== WGPU OBJECTS (Debug Pipeline) ==================//
+    wgpu::ShaderModule debugShaderModule;
+    wgpu::PipelineLayout debugPipelineLayout;
+    wgpu::RenderPipeline debugRenderPipeline;
+    wgpu::BindGroupLayout debugBindGroupLayout;
+    wgpu::BindGroup debugBindGroup;
+    wgpu::Buffer sphereTopologyVertexBuffer;
+    wgpu::Buffer sphereTopologyIndexBuffer;
+    uint32_t sphereTopologyVertexCount;
+    wgpu::Buffer pointsInfoStorageBuffer;
+    uint32_t maxDebugPoints = 0;
+    uint32_t numDebugPoints = 0;
 
     //================================//
     void InitImGui();
