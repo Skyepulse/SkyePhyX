@@ -24,17 +24,33 @@ public:
     Solver();
     ~Solver();
 
-    Mesh* solverBodies = nullptr;
-    Force* solverForces = nullptr;
+    std::vector<std::unique_ptr<Mesh>> solverBodies;
+    std::vector<std::unique_ptr<Force>> solverForces;
+
+    std::vector<Mesh*> bodyPtrs;
+    std::vector<Force*> forcePtrs;
 
     std::vector<GPULineData> lineData;
     std::vector<GPUDebugPointData> debugPointData;
 
     void Start();
     void Clear();
-
     void Step();
+
     Mesh* AddBody(ModelType modelType, float density, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& scale, const Eigen::Vector3f& velocity, const Quaternionf rotation, const Eigen::Vector3f& angularVelocity, bool isStatic, const Eigen::Vector3f& color = Eigen::Vector3f(1.0f, 1.0f, 1.0f));
+    Force* AddForce(std::unique_ptr<Force> force);
+    void RemoveForce(Force* force);
+
+    void RebuildPtrCaches()
+    {
+        bodyPtrs.clear();
+        bodyPtrs.reserve(solverBodies.size());
+        for (auto& b : solverBodies) bodyPtrs.push_back(b.get());
+
+        forcePtrs.clear();
+        forcePtrs.reserve(solverForces.size());
+        for (auto& f : solverForces) forcePtrs.push_back(f.get());
+    }
 
     float averageStepTime = 0.0f;
     SolverTimings timings;

@@ -907,7 +907,7 @@ void RenderEngine::UpdateLineBuffer(const std::vector<GPULineData>& lineData)
 }
 
 //================================//
-void RenderEngine::UpdateInstanceBuffer(Mesh* bodies)
+void RenderEngine::UpdateInstanceBuffer(std::vector<Mesh*>& bodies)
 {
     for (auto& [modelType, batch] : this->modelBatches)
     {
@@ -918,7 +918,7 @@ void RenderEngine::UpdateInstanceBuffer(Mesh* bodies)
 
     Eigen::Matrix4f modelMatrixBuffer = Eigen::Matrix4f::Identity();
 
-    for (const Mesh* body = bodies; body != nullptr; body = body->next)
+    for (const Mesh* body : bodies)
     {
         auto it = this->modelBatches.find(body->modelType);
         if (it == this->modelBatches.end()) continue; // unknown model type??

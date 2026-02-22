@@ -88,7 +88,7 @@ void GameManager::RunMainLoop()
 
         auto t1 = Clock::now();
         this->renderEngine->SetSolverStepTime(this->solver->averageStepTime);
-        this->renderEngine->UpdateInstanceBuffer(this->solver->solverBodies);
+        this->renderEngine->UpdateInstanceBuffer(this->solver->bodyPtrs);
 
         auto t2 = Clock::now();
         this->renderEngine->UpdateLineBuffer(this->solver->lineData);

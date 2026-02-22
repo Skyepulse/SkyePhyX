@@ -12,15 +12,14 @@ const float ENERGY_STIFFNESS_MIN = 0.01;
 const float MAX_ROTATION_VELOCITY = 50.0f;
 
 //================================//
-Solver::Solver(): solverBodies(nullptr)
+Solver::Solver()
 {
 }
 
 //================================//
 Solver::~Solver()
 {
-    while(solverBodies)
-        delete solverBodies;
+    Clear();
 }
 
 //================================//
@@ -35,26 +34,24 @@ void Solver::Start()
         Mesh* mesh = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 2.0f + i * 2.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::UnitRandom(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
         mesh->name = "Cube " + std::to_string(i);
     }
+
+    this->RebuildPtrCaches();
 }
 
 //================================//
 void Solver::Clear()
 {
-    while(solverBodies)
-        delete solverBodies;
-    solverBodies = nullptr;
-
-    while(solverForces)
-        delete solverForces;
-    solverForces = nullptr;
+    solverForces.clear();
+    solverBodies.clear();
+    forcePtrs.clear();
+    bodyPtrs.clear();
 }
 
 //================================//
 Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& scale, const Eigen::Vector3f& velocity, const Quaternionf rotation, const Eigen::Vector3f& angularVelocity, bool isStatic, const Eigen::Vector3f& color)
 {
-    new Mesh(this, modelType, color);
-
-    Mesh* newMesh = solverBodies;
+    std::unique_ptr<Mesh> newMesh = std::make_unique<Mesh>(this, modelType, color);
+    Mesh* raw = newMesh.get();
 
     newMesh->density            = density;
     newMesh->friction           = friction;
@@ -72,31 +69,58 @@ Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const 
     {
         newMesh->inertiaTensorBody    = Eigen::Matrix3f::Zero();
         newMesh->inertiaTensorBodyInv = Eigen::Matrix3f::Zero();
-        return newMesh;
     }
-
-    float sx2 = scale.x() * scale.x(); float sy2 = scale.y() * scale.y(); float sz2 = scale.z() * scale.z();
-    float r = scale.x() * 0.5f;
-
-    Eigen::Vector3f I;
-    switch(modelType)
+    else
     {
-        case ModelType_Cube:
-            newMesh->mass = density * scale.x() * scale.y() * scale.z();
-            I = (newMesh->mass / 12.0f) * Eigen::Vector3f(sy2 + sz2, sx2 + sz2, sx2 + sy2);
-            break;
-        case ModelType_Sphere:
-            newMesh->mass = density * (4.0f / 3.0f) * M_PI * r * r * r;
-            I = Eigen::Vector3f::Constant((2.0f / 5.0f) * newMesh->mass * r * r);
-            break;
-        default:
-            newMesh->mass = density * scale.x() * scale.y() * scale.z();
+        float sx2 = scale.x() * scale.x(); float sy2 = scale.y() * scale.y(); float sz2 = scale.z() * scale.z();
+        float r = scale.x() * 0.5f;
+
+        Eigen::Vector3f I;
+        switch(modelType)
+        {
+            case ModelType_Cube:
+                newMesh->mass = density * scale.x() * scale.y() * scale.z();
+                I = (newMesh->mass / 12.0f) * Eigen::Vector3f(sy2 + sz2, sx2 + sz2, sx2 + sy2);
+                break;
+            case ModelType_Sphere:
+                newMesh->mass = density * (4.0f / 3.0f) * M_PI * r * r * r;
+                I = Eigen::Vector3f::Constant((2.0f / 5.0f) * newMesh->mass * r * r);
+                break;
+            default:
+                newMesh->mass = density * scale.x() * scale.y() * scale.z();
+        }
+
+        newMesh->inertiaTensorBody = I.asDiagonal();
+        newMesh->inertiaTensorBodyInv = I.cwiseInverse().asDiagonal();
     }
 
-    newMesh->inertiaTensorBody = I.asDiagonal();
-    newMesh->inertiaTensorBodyInv = I.cwiseInverse().asDiagonal();
+    raw->solverIndex = static_cast<int>(solverBodies.size());
+    solverBodies.push_back(std::move(newMesh));
+    return raw;
+}
 
-    return newMesh;
+//================================//
+Force* Solver::AddForce(std::unique_ptr<Force> force)
+{
+    Force* raw = force.get();
+    raw->solverIndex = static_cast<int>(solverForces.size());
+    solverForces.push_back(std::move(force));
+    return raw;
+}
+
+//================================//
+void Solver::RemoveForce(Force* force)
+{
+    int idx = force->solverIndex;
+    if (idx < 0) return;
+
+    int last = static_cast<int>(solverForces.size()) - 1;
+    if (idx != last)
+    {
+        std::swap(solverForces[idx], solverForces[last]);
+        solverForces[idx]->solverIndex = idx;
+    }
+    solverForces.pop_back(); // Memo for me: this triggers ~Force()
 }
 
 //================================//
@@ -111,8 +135,10 @@ void Solver::Step()
     };
     auto stepStart = Clock::now();
 
+    this->RebuildPtrCaches();
+
     // 0. Cache Generalized Mass and Rotation Matrices
-    for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
+    for (Mesh* mesh : bodyPtrs)
     {
         if (mesh->isStatic) continue;
 
@@ -132,10 +158,14 @@ void Solver::Step()
 
     // 1. Broad phase detection
     auto phaseStart = Clock::now();
-    for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
+    const int N = static_cast<int>(bodyPtrs.size());
+    for (int i = 0; i < N; ++i)
     {
-        for (Mesh* other = mesh->next; other; other = other->next)
+        for (int j = i + 1; j < N; ++j)
         {
+            Mesh* mesh = bodyPtrs[i];
+            Mesh* other = bodyPtrs[j];
+
             Eigen::Vector3f pos1 = mesh->transform.GetPosition();
             Eigen::Vector3f pos2 = other->transform.GetPosition();
 
@@ -144,27 +174,30 @@ void Solver::Step()
             {
                 if (!isConstrainedTo(mesh, other))
                 {
-                    new Manifold(this, mesh, other);
+                    this->AddForce(std::make_unique<Manifold>(this, mesh, other));
                 }
             }
         }
     }
     out.broadPhaseMs = elapsed(phaseStart);
 
+    // 1.5 Rebuild force cache after broad phase
+    phaseStart = Clock::now();
+
+    forcePtrs.clear();
+    forcePtrs.reserve(solverForces.size());
+    for (auto& f : solverForces) forcePtrs.push_back(f.get());
+
+    // 2. Forces Warmstartin
     this->lineData.clear();
     this->debugPointData.clear();
-
-    // 2. Forces Warmstarting
-    phaseStart = Clock::now();
-    for (Force* force = solverForces; force != nullptr;)
+    std::vector<Force*> toRemove;
+    for (Force* force : forcePtrs)
     {
-        const bool isUsed = force->Initialize();
 
-        if (!isUsed)
+        if (!force->Initialize())
         {
-            Force* next = force->next;
-            delete force;
-            force = next;
+            toRemove.push_back(force);
             continue;
         }
 
@@ -183,9 +216,12 @@ void Solver::Step()
 
             force->constraintPoints[i].penalty = std::min(force->constraintPoints[i].penalty, force->constraintPoints[i].stiffness);
         }
-
-        force = force->next;
     }
+    for (Force* f : toRemove)
+        RemoveForce(f);
+    forcePtrs.clear();
+    for (auto& f : solverForces) forcePtrs.push_back(f.get());
+
     out.warmstartMs = elapsed(phaseStart);
 
     // 3. Energies Warmstarting
@@ -193,7 +229,7 @@ void Solver::Step()
 
     // 4. Bodies Warmstarting
     phaseStart = Clock::now();
-    for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
+    for (Mesh* mesh : bodyPtrs)
     {
         mesh->angularVelocity = mesh->angularVelocity.cwiseMin(Eigen::Vector3f::Constant(MAX_ROTATION_VELOCITY)).cwiseMax(Eigen::Vector3f::Constant(-MAX_ROTATION_VELOCITY));
 
@@ -259,7 +295,7 @@ void Solver::Step()
     for (int iter = 0; iter < this->numIterations; ++iter)
     {
         // 5.1 Primal
-        for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
+        for (Mesh* mesh : bodyPtrs)
         {
             if (mesh->isStatic) continue;
 
@@ -307,7 +343,7 @@ void Solver::Step()
         }
 
         // 5.5 Dual Update
-        for (Force* force = solverForces; force != nullptr; force = force->next)
+        for (Force* force : forcePtrs)
         {
             force->ComputeConstraints(alpha);
 
@@ -337,7 +373,7 @@ void Solver::Step()
 
     // 6. Velocity update
     phaseStart = Clock::now();
-    for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
+    for (Mesh* mesh : bodyPtrs)
     {
         if (mesh->isStatic) continue;
 
@@ -367,7 +403,7 @@ void Solver::Step()
     phaseStart = Clock::now();
     if (postStabilization)
     {
-        for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
+        for (Mesh* mesh : bodyPtrs)
         {
             if (mesh->isStatic) continue;
 

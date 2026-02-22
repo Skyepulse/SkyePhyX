@@ -138,7 +138,7 @@ public:
     void Initialize();
     void AcquireSwapchainTexture();
     void Render(void* userData);
-    void UpdateInstanceBuffer(Mesh* bodies);
+    void UpdateInstanceBuffer(std::vector<Mesh*>& meshes);
     void UpdateLineBuffer(const std::vector<GPULineData>& lineData);
     void UpdateDebugPointBuffer(const std::vector<GPUDebugPointData>& debugPointData);
     void SetSolverStepTime(float time) { this->solverStepTimeMs = time; }

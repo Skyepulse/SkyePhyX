@@ -29,7 +29,7 @@ struct Force
     Force(Solver* solver, std::vector<Mesh*> linkedBodies, int numConstraintPoints);
     ~Force();
 
-    Force* next = nullptr;
+    int solverIndex = -1;
 
     std::vector<Mesh*> linkedBodies;
     Solver* solver;
@@ -37,6 +37,7 @@ struct Force
 
     bool isManifold = false;
     bool includeHessian = true;
+    bool markedForRemoval = false;
 
     // HELPERS //
     //================================//

@@ -149,8 +149,9 @@ struct Mesh
     Mesh(Solver* solver, ModelType modelType, const Eigen::Vector3f& color = Eigen::Vector3f(1.0f, 1.0f, 1.0f));
     ~Mesh();
 
+    int solverIndex = -1;
+
     Transform transform;
-    Mesh* next = nullptr;
     std::vector<Force*> forces;
 
     ModelType modelType;

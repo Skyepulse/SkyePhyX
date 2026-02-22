@@ -4,18 +4,15 @@
 //================================//
 Mesh::Mesh(Solver* solver, ModelType modelType, const Eigen::Vector3f& color) : modelType(modelType), color(color), solver(solver)
 {
-    next = solver->solverBodies;
-    solver->solverBodies = this;
+    return;
 }
 
 //================================//
-Mesh::~Mesh()
+Mesh::~Mesh()   
 {
-    while (!forces.empty())
-        delete forces.back();
-        
-    Mesh** p = &solver->solverBodies;
-    while (*p != this)
-        p = &((*p)->next);
-    *p = next;
+    auto forcesCopy = forces;
+    for (Force* f : forcesCopy)
+    {
+        solver->RemoveForce(f);
+    }
 };
