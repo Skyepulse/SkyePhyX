@@ -116,8 +116,7 @@ void Solver::Step()
     {
         if (mesh->isStatic) continue;
 
-        Quaternionf q;
-        mesh->transform.GetRotation(q);
+        Quaternionf q = mesh->transform.GetRotation();
         mesh->cachedRotationMatrix = q.toRotationMatrix();
 
         if (!mesh->isStatic && mesh->mass > 0.f)
@@ -137,9 +136,8 @@ void Solver::Step()
     {
         for (Mesh* other = mesh->next; other; other = other->next)
         {
-            Eigen::Vector3f pos1, pos2;
-            mesh->transform.GetPosition(pos1);
-            other->transform.GetPosition(pos2);
+            Eigen::Vector3f pos1 = mesh->transform.GetPosition();
+            Eigen::Vector3f pos2 = other->transform.GetPosition();
 
             float distance = (pos1 - pos2).norm();
             if (distance < mesh->detectionRadius + other->detectionRadius)
@@ -199,16 +197,14 @@ void Solver::Step()
     {
         mesh->angularVelocity = mesh->angularVelocity.cwiseMin(Eigen::Vector3f::Constant(MAX_ROTATION_VELOCITY)).cwiseMax(Eigen::Vector3f::Constant(-MAX_ROTATION_VELOCITY));
 
-        Eigen::Vector3f pos;
-        mesh->transform.GetPosition(pos);
+        Eigen::Vector3f pos = mesh->transform.GetPosition();
         mesh->inertialPosition = pos + mesh->velocity * stepValue;
         if (!mesh->isStatic)
         {
             mesh->inertialPosition += GRAVITY * stepValue * stepValue;
         }
 
-        Quaternionf rot;
-        mesh->transform.GetRotation(rot);
+        Quaternionf rot = mesh->transform.GetRotation();
         mesh->inertialRotation = rot;
         if (!mesh->isStatic && !mesh->isParticle)
         {
@@ -302,13 +298,11 @@ void Solver::Step()
             Eigen::Vector3f dx_lin = dx.head<3>();
             Eigen::Vector3f dx_ang = dx.tail<3>();
 
-            Eigen::Vector3f pos;
-            mesh->transform.GetPosition(pos);
+            Eigen::Vector3f pos = mesh->transform.GetPosition();
             mesh->transform.SetPosition(pos - dx_lin);
 
             Quaternionf dq = QuaternionFromDifference(dx_ang, -1.f);
-            Quaternionf rot;
-            mesh->transform.GetRotation(rot);
+            Quaternionf rot = mesh->transform.GetRotation();
             mesh->transform.SetRotation((dq * rot).normalized());
         }
 
@@ -350,8 +344,7 @@ void Solver::Step()
         mesh->prevVelocity = mesh->velocity;
         mesh->prevAngularVelocity = mesh->angularVelocity;
 
-        Eigen::Vector3f pos;
-        mesh->transform.GetPosition(pos);
+        Eigen::Vector3f pos = mesh->transform.GetPosition();
         Eigen::Vector3f newVelocity = (pos - mesh->lastPosition) / stepValue;
 
         if (mesh->isDragged)
@@ -364,8 +357,7 @@ void Solver::Step()
 
         if (!mesh->isParticle)
         {
-            Quaternionf rot;
-            mesh->transform.GetRotation(rot);
+            Quaternionf rot = mesh->transform.GetRotation();
             mesh->angularVelocity = RotationDifference(rot, mesh->lastRotation) / stepValue;
         }
     }
@@ -413,13 +405,11 @@ void Solver::Step()
             Eigen::Vector3f dx_lin = dx.head<3>();
             Eigen::Vector3f dx_ang = dx.tail<3>();
 
-            Eigen::Vector3f pos;
-            mesh->transform.GetPosition(pos);
+            Eigen::Vector3f pos = mesh->transform.GetPosition();
             mesh->transform.SetPosition(pos - dx_lin);
 
             Quaternionf dq = QuaternionFromDifference(dx_ang, -1.f);
-            Quaternionf rot;
-            mesh->transform.GetRotation(rot);
+            Quaternionf rot = mesh->transform.GetRotation();
             mesh->transform.SetRotation((dq * rot).normalized());
         }
     }

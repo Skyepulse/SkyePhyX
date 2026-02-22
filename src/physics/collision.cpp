@@ -273,16 +273,14 @@ CollisionResult CollisionSpace::CollisionBoxBox(const Mesh* meshA, const Mesh* m
     CollisionResult result{};
     result.numContacts = 0;
 
-    Eigen::Vector3f posA, posB;
-    Quaternionf     qA, qB;
-    Eigen::Vector3f scaleA, scaleB;
+    Eigen::Vector3f posA = meshA->transform.GetPosition();
+    Eigen::Vector3f posB = meshB->transform.GetPosition();
 
-    meshA->transform.GetPosition(posA);
-    meshB->transform.GetPosition(posB);
-    meshA->transform.GetRotation(qA);
-    meshB->transform.GetRotation(qB);
-    meshA->transform.GetScale(scaleA);
-    meshB->transform.GetScale(scaleB);
+    Eigen::Vector3f scaleA = meshA->transform.GetScale();
+    Eigen::Vector3f scaleB = meshB->transform.GetScale();
+
+    Quaternionf qA = meshA->transform.GetRotation();
+    Quaternionf qB = meshB->transform.GetRotation();
 
     Eigen::Matrix3f rotA = qA.toRotationMatrix();
     Eigen::Matrix3f rotB = qB.toRotationMatrix();

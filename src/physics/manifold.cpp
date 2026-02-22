@@ -99,12 +99,12 @@ bool Manifold::Initialize()
     }
 
     // Precomputed Jacobian factors for normal and both tangent directions
-    Eigen::Vector3f posA, posB;
-    Quaternionf     qA, qB;
-    bodyA->transform.GetPosition(posA);
-    bodyB->transform.GetPosition(posB);
-    bodyA->transform.GetRotation(qA);
-    bodyB->transform.GetRotation(qB);
+    Eigen::Vector3f posA = bodyA->transform.GetPosition();
+    Eigen::Vector3f posB = bodyB->transform.GetPosition();
+
+    Quaternionf qA = bodyA->transform.GetRotation();
+    Quaternionf qB = bodyB->transform.GetRotation();
+
     Eigen::Matrix3f rotA = qA.toRotationMatrix();
     Eigen::Matrix3f rotB = qB.toRotationMatrix();
 
@@ -196,13 +196,11 @@ bool Manifold::Initialize()
 //================================//
 void Manifold::ComputeConstraints(float alpha)
 {
-    Eigen::Vector3f posA, posB;
-    bodyA->transform.GetPosition(posA);
-    bodyB->transform.GetPosition(posB);
+    Eigen::Vector3f posA = bodyA->transform.GetPosition();
+    Eigen::Vector3f posB = bodyB->transform.GetPosition();
 
-    Quaternionf qA, qB;
-    bodyA->transform.GetRotation(qA);
-    bodyB->transform.GetRotation(qB);
+    Quaternionf qA = bodyA->transform.GetRotation();
+    Quaternionf qB = bodyB->transform.GetRotation();
 
     Vector6f diffA, diffB;
     diffA.head<3>() = posA - bodyA->lastPosition;
@@ -261,9 +259,8 @@ void Manifold::ComputeDerivatives(Mesh* mesh)
 void Manifold::AddLineData(std::vector<GPULineData>& data) const
 {
     // Line from center of bodyA to center of bodyB
-    Eigen::Vector3f posA, posB;
-    bodyA->transform.GetPosition(posA);
-    bodyB->transform.GetPosition(posB);
+    Eigen::Vector3f posA = bodyA->transform.GetPosition();
+    Eigen::Vector3f posB = bodyB->transform.GetPosition();
 
     GPULineData link;
     Eigen::Map<Eigen::Vector3f>(link.start) = posA;
@@ -278,12 +275,10 @@ void Manifold::AddLineData(std::vector<GPULineData>& data) const
 //================================//
 void Manifold::AddDebugPointData(std::vector<GPUDebugPointData>& data) const
 {
-    Eigen::Vector3f posA, posB;
-    Quaternionf qA, qB;
-    bodyA->transform.GetPosition(posA);
-    bodyB->transform.GetPosition(posB);
-    bodyA->transform.GetRotation(qA);
-    bodyB->transform.GetRotation(qB);
+    Eigen::Vector3f  posA = bodyA->transform.GetPosition();
+    Eigen::Vector3f  posB = bodyB->transform.GetPosition();
+    Quaternionf qA = bodyA->transform.GetRotation();
+    Quaternionf qB = bodyB->transform.GetRotation();
 
     for (int i = 0; i < numContactPoints; i++)
     {

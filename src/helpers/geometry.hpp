@@ -90,21 +90,21 @@ public:
     }
 
     //================================//
-    void GetPosition(Eigen::Vector3f& outPosition) const
+    Eigen::Vector3f GetPosition() const
     {
-        outPosition = position;
+        return position;
     }
 
     //================================//
-    void GetRotation(Quaternionf& outRotation) const
+    Quaternionf GetRotation() const
     {
-        outRotation = rotation;
+        return rotation;
     }
 
     //================================//
-    void GetScale(Eigen::Vector3f& outScale) const
+    Eigen::Vector3f GetScale() const
     {
-        outScale = scale;
+        return scale;
     }
 
     //================================//
@@ -197,8 +197,7 @@ struct Mesh
     {
         if (isStatic) return Eigen::Matrix3f::Zero();
 
-        Quaternionf R;
-        transform.GetRotation(R);
+        Quaternionf R = transform.GetRotation();
         Eigen::Matrix3f Rmat = R.toRotationMatrix();
         return Rmat * inertiaTensorBodyInv * Rmat.transpose();
     }
@@ -226,8 +225,7 @@ struct Mesh
 
         Quaternionf w(0.f, angularVelocity.x(), angularVelocity.y(), angularVelocity.z());
 
-        Quaternionf q;
-        transform.GetRotation(q);
+        Quaternionf q = transform.GetRotation();
 
         Quaternionf qdot;
         qdot.w()   = 0.5f * (w * q).w();
@@ -244,12 +242,10 @@ struct Mesh
     {
         Vector6f dx;
 
-        Eigen::Vector3f pos;
-        transform.GetPosition(pos);
+        Eigen::Vector3f pos = transform.GetPosition();
         dx.head<3>() = pos - inertialPosition;
 
-        Quaternionf qCurr;
-        transform.GetRotation(qCurr);
+        Quaternionf qCurr = transform.GetRotation();
         dx.tail<3>() = RotationDifference(qCurr, inertialRotation);
 
         return dx;

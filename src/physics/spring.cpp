@@ -72,8 +72,7 @@ void Spring::ComputeDerivatives(Mesh* mesh)
 
     if (mesh == bodyA && bodyA != nullptr)
     {
-        Quaternionf rotA;
-        bodyA->transform.GetRotation(rotA);
+        Quaternionf rotA = bodyA->transform.GetRotation();
         const Eigen::Vector3f r = rotA * rA;
 
         const Eigen::Matrix3f Sr = -skew(r);
@@ -91,8 +90,7 @@ void Spring::ComputeDerivatives(Mesh* mesh)
     }
     else
     {
-        Quaternionf rotB;
-        bodyB->transform.GetRotation(rotB);
+        Quaternionf rotB = bodyB->transform.GetRotation();
         const Eigen::Vector3f r = rotB * rB;
 
         const Eigen::Matrix3f minusSr = skew(r);
