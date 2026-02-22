@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 set(CMAKE_CXX_FLAGS "/std:c++17" CACHE STRING "" FORCE)
 
 project(SkyePhyX LANGUAGES C CXX)
+add_compile_options(/FS)
 
 # Necessary to work for assimp and dawn
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)

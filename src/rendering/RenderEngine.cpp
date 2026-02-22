@@ -40,18 +40,64 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui::SliderFloat("Alpha", &this->solver->alpha, 0.0f, 1.0f);
     ImGui::SliderFloat("Gamma", &this->solver->gamma, 0.0f, 1.0f);
     ImGui::InputFloat("Beta", &this->solver->beta, 1000.0f, 1000000.0f, "%.1f");
-    ImGui::SliderFloat("Step value", &this->solver->stepValue, 0.001f, 0.1f); // min: 1 ms, max: 100 ms
-    // ImGui::SliderInt("Num Substeps", &this->solver->numSubsteps, 1, 10);
+    ImGui::SliderFloat("Step value", &this->solver->stepValue, 0.001f, 0.1f);
     ImGui::InputFloat("On Penetration Penalty", &this->solver->onPenetrationPenalty, 100.0f, 10000.0f, "%.1f");
-
     ImGui::End();
-    ImGui::Separator();
-    ImGui::Spacing();
 
     ImGui::Begin("Performance Metrics");
     ImGui::Text("GPU Draw Time: %.3f ms", this->gpuFrameTimeDrawMs);
-    ImGui::Text("CPU Frame Time: %.3f ms", this->cpuFrameTimeMs);
-    ImGui::Text("Solver Step Time: %.3f ms", this->solverStepTimeMs);
+    ImGui::Separator();
+
+    ImGui::Text("Solver Total: %.3f ms", this->solverStepTimeMs);
+
+    const SolverTimings& t = this->solver->timings;
+    float solverTotal = t.totalSubstepMs > 0.001f ? t.totalSubstepMs : 1.0f;
+
+    ImGui::Text("  Broad Phase:    %6.3f ms  (%4.1f%%)", t.broadPhaseMs,     100.f * t.broadPhaseMs / solverTotal);
+    ImGui::Text("  Warmstart:      %6.3f ms  (%4.1f%%)", t.warmstartMs,      100.f * t.warmstartMs / solverTotal);
+    ImGui::Text("  Prediction:     %6.3f ms  (%4.1f%%)", t.predictionMs,     100.f * t.predictionMs / solverTotal);
+    ImGui::Text("  Primal+Dual:    %6.3f ms  (%4.1f%%)", t.primalDualMs,     100.f * t.primalDualMs / solverTotal);
+    ImGui::Text("  Velocity Update: %5.3f ms  (%4.1f%%)", t.velocityUpdateMs, 100.f * t.velocityUpdateMs / solverTotal);
+    ImGui::Text("  Post-Stab:      %6.3f ms  (%4.1f%%)", t.postStabMs,       100.f * t.postStabMs / solverTotal);
+
+    ImVec2 barSize(200, 14);
+    auto DrawBar = [&](const char* label, float ms, float total, ImVec4 color) {
+        float frac = ms / total;
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, color);
+        ImGui::ProgressBar(frac, barSize, "");
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::Text("%s", label);
+    };
+
+    ImGui::Separator();
+    DrawBar("Broad",      t.broadPhaseMs,     solverTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+    DrawBar("Warmstart",  t.warmstartMs,      solverTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+    DrawBar("Prediction", t.predictionMs,     solverTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
+    DrawBar("Solve",      t.primalDualMs,     solverTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+    DrawBar("Velocity",   t.velocityUpdateMs, solverTotal, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+    DrawBar("PostStab",   t.postStabMs,       solverTotal, ImVec4(0.7f, 0.3f, 0.9f, 1.0f));
+
+    ImGui::Separator();
+    const RenderTimings& rt = this->renderTimings;
+    float renderTotal = rt.totalFrame.average() > 0.001f ? rt.totalFrame.average() : 1.0f;
+
+    ImGui::Text("Render CPU Total: %.3f ms", rt.totalFrame.average());
+    ImGui::Text("  Acquire Swap:   %6.3f ms  (%4.1f%%)", rt.acquireSwapchain.average(), 100.f * rt.acquireSwapchain.average() / renderTotal);
+    ImGui::Text("  Instances:      %6.3f ms  (%4.1f%%)", rt.updateInstances.average(),  100.f * rt.updateInstances.average() / renderTotal);
+    ImGui::Text("  Lines:          %6.3f ms  (%4.1f%%)", rt.updateLines.average(),      100.f * rt.updateLines.average() / renderTotal);
+    ImGui::Text("  Debug Points:   %6.3f ms  (%4.1f%%)", rt.updateDebug.average(),      100.f * rt.updateDebug.average() / renderTotal);
+    ImGui::Text("  Render+Submit:  %6.3f ms  (%4.1f%%)", rt.render.average(),           100.f * rt.render.average() / renderTotal);
+    ImGui::Text("  Present+Events: %6.3f ms  (%4.1f%%)", rt.present.average(),          100.f * rt.present.average() / renderTotal);
+
+    ImGui::Separator();
+    DrawBar("Acquire",   rt.acquireSwapchain.average(), renderTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+    DrawBar("Instances", rt.updateInstances.average(),  renderTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+    DrawBar("Lines",     rt.updateLines.average(),      renderTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
+    DrawBar("Debug",     rt.updateDebug.average(),      renderTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+    DrawBar("Render",    rt.render.average(),           renderTotal, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+    DrawBar("Present",   rt.present.average(),          renderTotal, ImVec4(0.7f, 0.3f, 0.9f, 1.0f));
+
     ImGui::Separator();
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::End();
@@ -98,12 +144,25 @@ void RenderEngine::Render(void* userData)
     if (this->resizeFlag)
     {
         WindowFormat windowFormat = this->wgpuBundle->GetWindowFormat();
-        this->BuildResizeDependentResources(static_cast<float>(windowFormat.width), static_cast<float>(windowFormat.height));
+        this->BuildResizeDependentResources(
+            static_cast<float>(windowFormat.width),
+            static_cast<float>(windowFormat.height)
+        );
+        this->resizeFlag = false;
     }
 
     wgpu::TextureView swapchainView = this->currentTexture.texture.CreateView();
-    wgpu::Queue queue = this->wgpuBundle->GetDevice().GetQueue();
-    wgpu::CommandEncoder encoder = this->wgpuBundle->GetDevice().CreateCommandEncoder();
+    wgpu::Device device = this->wgpuBundle->GetDevice();
+    wgpu::Queue queue = device.GetQueue();
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+
+    Uniform frameUniforms{};
+    Eigen::Matrix4f view, proj;
+    this->camera->GetViewMatrix(view);
+    this->camera->GetProjectionMatrix(proj);
+    Eigen::Map<Eigen::Matrix4f>(frameUniforms.ViewMatrix) = view;
+    Eigen::Map<Eigen::Matrix4f>(frameUniforms.ProjectionMatrix) = proj;
+    queue.WriteBuffer(this->uniformBuffer, 0, &frameUniforms, sizeof(Uniform));
 
     wgpu::PassTimestampWrites drawTimestamps{};
     drawTimestamps.querySet = this->gpuTimingQuerySet;
@@ -116,15 +175,6 @@ void RenderEngine::Render(void* userData)
     depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
     depthAttachment.depthClearValue = 1.0f;
 
-    Uniform frameUniforms{};
-    Eigen::Matrix4f view, proj;
-    this->camera->GetViewMatrix(view);
-    this->camera->GetProjectionMatrix(proj);
-    Eigen::Map<Eigen::Matrix4f>(frameUniforms.ViewMatrix) = view;
-    Eigen::Map<Eigen::Matrix4f>(frameUniforms.ProjectionMatrix) = proj;
-    this->wgpuBundle->GetDevice().GetQueue().WriteBuffer(this->uniformBuffer, 0, &frameUniforms, sizeof(Uniform));
-
-    // Draw pass
     {
         wgpu::RenderPassDescriptor renderPassDesc{};
         renderPassDesc.colorAttachmentCount = 1;
@@ -134,8 +184,8 @@ void RenderEngine::Render(void* userData)
             renderPassDesc.timestampWrites = &drawTimestamps;
 
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPassDesc);
-        pass.SetPipeline(this->renderPipeline.Get());
 
+        pass.SetPipeline(this->renderPipeline.Get());
         pass.SetBindGroup(0, this->instanceBindGroup.Get());
         pass.SetVertexBuffer(0, this->atlasVertexBuffer.Get());
         pass.SetIndexBuffer(this->atlasIndexBuffer.Get(), wgpu::IndexFormat::Uint32);
@@ -146,75 +196,39 @@ void RenderEngine::Render(void* userData)
                 continue;
 
             pass.DrawIndexed(
-                batch.slot.indexCount, 
-                batch.instanceCount, 
-                batch.slot.indexOffset, 
-                batch.slot.vertexOffset, 
+                batch.slot.indexCount,
+                batch.instanceCount,
+                batch.slot.indexOffset,
+                batch.slot.vertexOffset,
                 batch.firstInstanceOffset
             );
         }
-        
+
+        if (this->numLines > 0)
+        {
+            pass.SetPipeline(this->lineRenderPipeline.Get());
+            pass.SetBindGroup(0, this->lineBindGroup.Get());
+            pass.SetVertexBuffer(0, this->lineVertexBuffer.Get());
+            pass.Draw(2, this->numLines);
+        }
+
+        if (this->debug && this->numDebugPoints > 0)
+        {
+            pass.SetPipeline(this->debugRenderPipeline.Get());
+            pass.SetBindGroup(0, this->debugBindGroup.Get());
+            pass.SetVertexBuffer(0, this->sphereTopologyVertexBuffer.Get());
+            pass.SetIndexBuffer(this->sphereTopologyIndexBuffer.Get(), wgpu::IndexFormat::Uint32);
+            pass.DrawIndexed(this->sphereTopologyVertexCount, this->numDebugPoints, 0, 0, 0);
+        }
+
         this->RenderImGui(pass);
+
         pass.End();
     }
 
-    // Line draw pass
-    drawTimestamps.beginningOfPassWriteIndex = 2;
-    drawTimestamps.endOfPassWriteIndex = 3;
-    {
-        wgpu::RenderPassColorAttachment lineColorAttachment = this->wgpuBundle->GetColorAttachment(swapchainView);
-        lineColorAttachment.loadOp = wgpu::LoadOp::Load;
-
-        wgpu::RenderPassDepthStencilAttachment lineDepthAttachment{};
-        lineDepthAttachment.view = this->depthTextureView;
-        lineDepthAttachment.depthLoadOp = wgpu::LoadOp::Load;
-        lineDepthAttachment.depthStoreOp = wgpu::StoreOp::Store;
-
-        wgpu::RenderPassDescriptor renderPassDesc{};
-        renderPassDesc.colorAttachmentCount = 1;
-        renderPassDesc.colorAttachments = &lineColorAttachment;
-        renderPassDesc.depthStencilAttachment = &lineDepthAttachment;
-        if (this->wgpuBundle->SupportsTimestampQuery())
-            renderPassDesc.timestampWrites = &drawTimestamps;
-
-        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPassDesc);
-        pass.SetPipeline(this->lineRenderPipeline.Get());
-
-        pass.SetBindGroup(0, this->lineBindGroup.Get());
-        pass.SetVertexBuffer(0, this->lineVertexBuffer.Get());
-
-        pass.Draw(2, this->numLines);
-        pass.End();
-    }
-
-    if (this->debug)
-    {
-        // Debug pass
-        wgpu::RenderPassColorAttachment debugColorAttachment = this->wgpuBundle->GetColorAttachment(swapchainView);
-        debugColorAttachment.loadOp = wgpu::LoadOp::Load;
-
-        wgpu::RenderPassDepthStencilAttachment debugDepthAttachment{};
-        debugDepthAttachment.view = this->depthTextureView;
-        debugDepthAttachment.depthLoadOp = wgpu::LoadOp::Load;
-        debugDepthAttachment.depthStoreOp = wgpu::StoreOp::Store;
-
-        wgpu::RenderPassDescriptor debugPassDesc{};
-        debugPassDesc.colorAttachmentCount = 1;
-        debugPassDesc.colorAttachments = &debugColorAttachment;
-        debugPassDesc.depthStencilAttachment = &debugDepthAttachment;
-
-        wgpu::RenderPassEncoder debugPass = encoder.BeginRenderPass(&debugPassDesc);
-        debugPass.SetPipeline(this->debugRenderPipeline.Get());
-        debugPass.SetBindGroup(0, this->debugBindGroup.Get());
-        debugPass.SetVertexBuffer(0, this->sphereTopologyVertexBuffer.Get());
-        debugPass.SetIndexBuffer(this->sphereTopologyIndexBuffer.Get(), wgpu::IndexFormat::Uint32);
-        debugPass.DrawIndexed(this->sphereTopologyVertexCount, this->numDebugPoints, 0, 0, 0);
-        debugPass.End();
-    }
-
+    // Resolve GPU timestamps
     if (this->wgpuBundle->SupportsTimestampQuery())
     {
-        // Resolve timestamps
         encoder.ResolveQuerySet(
             this->gpuTimingQuerySet,
             0,
@@ -233,14 +247,7 @@ void RenderEngine::Render(void* userData)
     }
 
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
-    this->wgpuBundle->GetDevice().GetQueue().Submit(1, &commandBuffer);
-
-    auto cpuFrameEnd = std::chrono::high_resolution_clock::now();
-    double cpuFrameMs = std::chrono::duration<double, std::milli>(cpuFrameEnd - this->cpuStartTime).count();
-    this->cpuFrameAccumulator.push_back(static_cast<float>(cpuFrameMs));
-    if (this->cpuFrameAccumulator.size() > 10)
-        this->cpuFrameAccumulator.erase(this->cpuFrameAccumulator.begin());
-    this->cpuFrameTimeMs = std::accumulate(this->cpuFrameAccumulator.begin(), this->cpuFrameAccumulator.end(), 0.0f) / static_cast<float>(this->cpuFrameAccumulator.size());
+    queue.Submit(1, &commandBuffer);
 }
 
 //================================//
@@ -251,18 +258,18 @@ void RenderEngine::InitializeGPUTimingQueries()
 
     wgpu::QuerySetDescriptor queryDesc{};
     queryDesc.type = wgpu::QueryType::Timestamp;
-    queryDesc.count = 4;
+    queryDesc.count = 2;
     this->gpuTimingQuerySet = this->wgpuBundle->GetDevice().CreateQuerySet(&queryDesc);
 
     wgpu::BufferDescriptor resolveDesc{};
-    resolveDesc.size = sizeof(uint64_t) * 4;
+    resolveDesc.size = sizeof(uint64_t) * 2;
     resolveDesc.usage = wgpu::BufferUsage::QueryResolve | wgpu::BufferUsage::CopySrc;
     this->gpuTimingResolveBuffer = this->wgpuBundle->GetDevice().CreateBuffer(&resolveDesc);
 
     wgpu::BufferDescriptor readbackDesc{};
-    readbackDesc.size = sizeof(uint64_t) * 4;
+    readbackDesc.size = sizeof(uint64_t) * 2;
     readbackDesc.usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst;
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 2; ++i)
     {
         this->gpuTimingReadbackBuffers[i] = this->wgpuBundle->GetDevice().CreateBuffer(&readbackDesc);
     }
@@ -277,13 +284,12 @@ void RenderEngine::ReadTimingQueries()
     int readBuffer = currentTimingWriteBuffer;
     currentTimingWriteBuffer = 1 - currentTimingWriteBuffer; // swap
     this->gpuTimingMapInFlight = true;
-    
-    TimingCtx* ctx = new TimingCtx{this, readBuffer};
-    
+    this->timingCtx.bufferIndex = readBuffer;
+    TimingCtx* ctx = &this->timingCtx;
     this->gpuTimingReadbackBuffers[readBuffer].MapAsync(
         wgpu::MapMode::Read,
         0,
-        sizeof(uint64_t) * 4,
+        sizeof(uint64_t) * 2,
         wgpu::CallbackMode::AllowProcessEvents,
         [](wgpu::MapAsyncStatus status, wgpu::StringView message, TimingCtx* ctx) {
             if (status == wgpu::MapAsyncStatus::Success)
@@ -293,29 +299,14 @@ void RenderEngine::ReadTimingQueries()
                 );
                 
                 float drawMs = (timestamps[1] - timestamps[0]) / 1'000'000.0f;
-                float LineDrawMs = (timestamps[3] - timestamps[2]) / 1'000'000.0f;
 
-                ctx->engine->gpuFrameDrawAccumulator.push_back(drawMs);
-                if (ctx->engine->gpuFrameDrawAccumulator.size() > 10)
-                    ctx->engine->gpuFrameDrawAccumulator.erase(ctx->engine->gpuFrameDrawAccumulator.begin());
-                ctx->engine->gpuFrameTimeDrawMs = std::accumulate(
-                    ctx->engine->gpuFrameDrawAccumulator.begin(),
-                    ctx->engine->gpuFrameDrawAccumulator.end(), 0.0f
-                ) / ctx->engine->gpuFrameDrawAccumulator.size();
+                ctx->engine->gpuFrameDrawAccumulator.push(drawMs);
+                ctx->engine->gpuFrameTimeDrawMs = ctx->engine->gpuFrameDrawAccumulator.average();
 
-                ctx->engine->gpuLineFrameDrawAccumulator.push_back(LineDrawMs);
-                if (ctx->engine->gpuLineFrameDrawAccumulator.size() > 10)
-                    ctx->engine->gpuLineFrameDrawAccumulator.erase(ctx->engine->gpuLineFrameDrawAccumulator.begin());
-                ctx->engine->gpuLineFrameTimeDrawMs = std::accumulate(
-                    ctx->engine->gpuLineFrameDrawAccumulator.begin(),
-                    ctx->engine->gpuLineFrameDrawAccumulator.end(), 0.0f
-                ) / ctx->engine->gpuLineFrameDrawAccumulator.size();
-                
                 ctx->engine->gpuTimingReadbackBuffers[ctx->bufferIndex].Unmap();
             }
             
             ctx->engine->gpuTimingMapInFlight = false;
-            delete ctx;
         },
         ctx
     );
@@ -845,7 +836,7 @@ void RenderEngine::BuildBuffers()
 }
 
 //================================//
-void RenderEngine::UpdateDebugPointBuffer(std::vector<GPUDebugPointData> pointsData)
+void RenderEngine::UpdateDebugPointBuffer(const std::vector<GPUDebugPointData>& pointsData)
 {   
     if (pointsData.size() > this->maxDebugPoints)
     {
@@ -890,7 +881,7 @@ void RenderEngine::UpdateDebugPointBuffer(std::vector<GPUDebugPointData> pointsD
 }
 
 //================================//
-void RenderEngine::UpdateLineBuffer(std::vector<GPULineData> lineData)
+void RenderEngine::UpdateLineBuffer(const std::vector<GPULineData>& lineData)
 {
     if (lineData.size() > this->maxLines)
     {
@@ -918,8 +909,6 @@ void RenderEngine::UpdateLineBuffer(std::vector<GPULineData> lineData)
 //================================//
 void RenderEngine::UpdateInstanceBuffer(Mesh* bodies)
 {
-    this->cpuStartTime = std::chrono::high_resolution_clock::now();
-
     for (auto& [modelType, batch] : this->modelBatches)
     {
         batch.cpuInstances.clear();
@@ -928,9 +917,7 @@ void RenderEngine::UpdateInstanceBuffer(Mesh* bodies)
     }
 
     Eigen::Matrix4f modelMatrixBuffer = Eigen::Matrix4f::Identity();
-    Eigen::MatrixXf normalMatrixBuffer(3, 4);
 
-    int meshCount = 0;
     for (const Mesh* body = bodies; body != nullptr; body = body->next)
     {
         auto it = this->modelBatches.find(body->modelType);
@@ -947,7 +934,6 @@ void RenderEngine::UpdateInstanceBuffer(Mesh* bodies)
         instanceData.color[3] = 1.0f;
 
         it->second.cpuInstances.push_back(instanceData);
-        meshCount++;
     }
 
     this->packedInstances.clear();

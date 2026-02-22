@@ -72,6 +72,46 @@ struct Uniform
 static_assert(sizeof(Uniform) == 128, "Uniform must be tightly packed to 128 bytes for correct buffer layout");
 
 //================================//
+struct RingAccumulator 
+{
+    float samples[10]{};
+    int count = 0;
+    int head = 0;
+    float sum = 0.0f;
+
+    void push(float v) 
+    {
+        if (count < 10) 
+        {
+            samples[head] = v;
+            sum += v;
+            head = (head + 1) % 10;
+            count++;
+        } 
+        else 
+        {
+            sum -= samples[head];
+            samples[head] = v;
+            sum += v;
+            head = (head + 1) % 10;
+        }
+    }
+    float average() const { return count > 0 ? sum / count : 0.0f; }
+};
+
+//================================//
+struct RenderTimings
+{
+    RingAccumulator acquireSwapchain;
+    RingAccumulator updateInstances;
+    RingAccumulator updateLines;
+    RingAccumulator updateDebug;
+    RingAccumulator render;
+    RingAccumulator present;
+    RingAccumulator totalFrame;
+};
+
+//================================//
 class RenderEngine
 {
 public:
@@ -99,14 +139,15 @@ public:
     void AcquireSwapchainTexture();
     void Render(void* userData);
     void UpdateInstanceBuffer(Mesh* bodies);
-    void UpdateLineBuffer(std::vector<GPULineData> lineData);
-    void UpdateDebugPointBuffer(std::vector<GPUDebugPointData> debugPointData);
+    void UpdateLineBuffer(const std::vector<GPULineData>& lineData);
+    void UpdateDebugPointBuffer(const std::vector<GPUDebugPointData>& debugPointData);
     void SetSolverStepTime(float time) { this->solverStepTimeMs = time; }
 
     //================================//
     Camera* GetCamera() { return this->camera.get(); }
 
     bool debug = true;
+    RenderTimings renderTimings;
 
 private:
     WgpuBundle* wgpuBundle;
@@ -117,20 +158,15 @@ private:
 
     wgpu::QuerySet gpuTimingQuerySet;
     wgpu::Buffer gpuTimingResolveBuffer;
-    wgpu::Buffer gpuTimingReadbackBuffers[4];
+    wgpu::Buffer gpuTimingReadbackBuffers[2];
     bool gpuTimingMapInFlight = false;
     int currentTimingWriteBuffer = 0;
 
     float gpuFrameTimeDrawMs = 0.0f;
-    std::vector<float> gpuFrameDrawAccumulator;
-    float gpuLineFrameTimeDrawMs = 0.0f;
-    std::vector<float> gpuLineFrameDrawAccumulator;
+    RingAccumulator gpuFrameDrawAccumulator;
 
-    float cpuFrameTimeMs = 0.0f;
-    std::vector<float> cpuFrameAccumulator;
     float solverStepTimeMs = 0.0f;
-
-    std::chrono::steady_clock::time_point cpuStartTime;
+    TimingCtx timingCtx{this, 0};
 
     //=============== ATLAS =================//
     std::vector<GPUVertex> allVertices;

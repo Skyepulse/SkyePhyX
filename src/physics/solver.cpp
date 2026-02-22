@@ -108,9 +108,17 @@ Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const 
 //================================//
 void Solver::Step()
 {
-    auto startTime = std::chrono::high_resolution_clock::now();
+    SolverTimings& out = this->timings;
+
+    using Clock = std::chrono::high_resolution_clock;
+    auto elapsed = [](Clock::time_point start) 
+    {
+        return std::chrono::duration<float, std::milli>(Clock::now() - start).count();
+    };
+    auto stepStart = Clock::now();
 
     // 1. Broad phase detection
+    auto phaseStart = Clock::now();
     for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
     {
         for (Mesh* other = mesh->next; other; other = other->next)
@@ -125,22 +133,24 @@ void Solver::Step()
                 if (!isConstrainedTo(mesh, other))
                 {
                     Manifold* manifold = new Manifold(this, mesh, other);
-                    std::cout << "New collision detected between Mesh " << mesh->name << " and Mesh " << other->name << std::endl;
                 }
             }
         }
     }
+    out.broadPhaseMs = elapsed(phaseStart);
 
     this->lineData.clear();
     this->debugPointData.clear();
+
     // 2. Forces Warmstarting
+    phaseStart = Clock::now();
     for (Force* force = solverForces; force != nullptr;)
     {
         const bool isUsed = force->Initialize();
 
         if (!isUsed)
         {
-            Manifold* manifold = dynamic_cast<Manifold*>(force); // Non colliding but close manifolds
+            Manifold* manifold = dynamic_cast<Manifold*>(force);
             if (manifold)
             {
                 Eigen::Vector3f p1, p2;
@@ -150,7 +160,7 @@ void Solver::Step()
                 float dist = (p1 - p2).norm();
                 float threshold = manifold->bodyA->detectionRadius + manifold->bodyB->detectionRadius;
 
-                if (dist < threshold * 1.1f) // Keep alive with small hysteresis
+                if (dist < threshold * 1.1f)
                 {
                     force->AddLineData(this->lineData);
                     force = force->next;
@@ -159,9 +169,9 @@ void Solver::Step()
             }
 
             Force* next = force->next;
-            delete force; 
+            delete force;
             force = next;
-            continue;   
+            continue;
         }
 
         force->AddLineData(this->lineData);
@@ -171,7 +181,7 @@ void Solver::Step()
         {
             if (!this->postStabilization)
                 force->constraintPoints[i].lambda *= alpha * gamma;
-  
+
             float newPenalty = force->constraintPoints[i].penalty * gamma;
             if (newPenalty < PENALTY_MIN) newPenalty = PENALTY_MIN;
             if (newPenalty > PENALTY_MAX) newPenalty = PENALTY_MAX;
@@ -182,17 +192,17 @@ void Solver::Step()
 
         force = force->next;
     }
+    out.warmstartMs = elapsed(phaseStart);
 
     // 3. Energies Warmstarting
     // TODO
 
     // 4. Bodies Warmstarting
+    phaseStart = Clock::now();
     for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
     {
-        // 4.1 Constrain rotation velocity ...?
         mesh->angularVelocity = mesh->angularVelocity.cwiseMin(Eigen::Vector3f::Constant(MAX_ROTATION_VELOCITY)).cwiseMax(Eigen::Vector3f::Constant(-MAX_ROTATION_VELOCITY));
 
-        // 4.2 Prediction linear
         Eigen::Vector3f pos;
         mesh->transform.GetPosition(pos);
         mesh->inertialPosition = pos + mesh->velocity * stepValue;
@@ -201,7 +211,6 @@ void Solver::Step()
             mesh->inertialPosition += GRAVITY * stepValue * stepValue;
         }
 
-        // 4.3 Prediction angular
         Quaternionf rot;
         mesh->transform.GetRotation(rot);
         mesh->inertialRotation = rot;
@@ -219,7 +228,6 @@ void Solver::Step()
             mesh->inertialRotation = q.normalized();
         }
 
-        // 4.4 Adaptive warmstarting
         Eigen::Vector3f linearAcceleration = (mesh->velocity - mesh->prevVelocity) / stepValue;
         float gravityMagnitude = GRAVITY.norm();
         float accelWeight = 0.0f;
@@ -252,8 +260,10 @@ void Solver::Step()
             mesh->transform.SetRotation(q.normalized());
         }
     }
+    out.predictionMs = elapsed(phaseStart);
 
     // 5. Main Iteration Loop
+    phaseStart = Clock::now();
     for (int iter = 0; iter < this->numIterations; ++iter)
     {
         // 5.1 Primal
@@ -264,7 +274,6 @@ void Solver::Step()
             Matrix6f lhs = mesh->GetGeneralizedMass() / (stepValue * stepValue);
             Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
 
-            // 5.2 Loop over forces
             for (Force* force : mesh->forces)
             {
                 force->ComputeConstraints(alpha);
@@ -273,10 +282,9 @@ void Solver::Step()
                 const int numConstraints = force->numConstraints();
                 for (int i = 0; i < numConstraints; ++i)
                 {
-                    float lambda = isinf(force->constraintPoints[i].stiffness) ?force->constraintPoints[i].lambda: 0.f;
+                    float lambda = isinf(force->constraintPoints[i].stiffness) ? force->constraintPoints[i].lambda : 0.f;
                     float f = std::clamp(force->constraintPoints[i].penalty * force->constraintPoints[i].C + lambda, force->constraintPoints[i].fminMagnitude, force->constraintPoints[i].fmaxMagnitude);
 
-                    // Diagonal matrix, of sum of columns of hessian
                     Matrix6f H = force->constraintPoints[i].H;
                     Matrix6f G = Matrix6f::Zero();
                     for (int j = 0; j < 6; ++j)
@@ -290,9 +298,6 @@ void Solver::Step()
                 }
             }
 
-            // 5.3 Loop over energies
-
-            // 5.4 solve LDLT
             Vector6f dx = lhs.ldlt().solve(rhs);
             Eigen::Vector3f dx_lin = dx.head<3>();
             Eigen::Vector3f dx_ang = dx.tail<3>();
@@ -315,12 +320,11 @@ void Solver::Step()
             const int numConstraints = force->numConstraints();
             for (int i = 0; i < numConstraints; ++i)
             {
-                float lambda = isinf(force->constraintPoints[i].stiffness) ?force->constraintPoints[i].lambda: 0.f;
+                float lambda = isinf(force->constraintPoints[i].stiffness) ? force->constraintPoints[i].lambda : 0.f;
 
                 force->constraintPoints[i].lambda = lambda + force->constraintPoints[i].penalty * force->constraintPoints[i].C;
                 if (force->constraintPoints[i].lambda < force->constraintPoints[i].fminMagnitude)
                     force->constraintPoints[i].lambda = force->constraintPoints[i].fminMagnitude;
-
                 else if (force->constraintPoints[i].lambda > force->constraintPoints[i].fmaxMagnitude)
                     force->constraintPoints[i].lambda = force->constraintPoints[i].fmaxMagnitude;
 
@@ -335,8 +339,10 @@ void Solver::Step()
             }
         }
     }
+    out.primalDualMs = elapsed(phaseStart);
 
     // 6. Velocity update
+    phaseStart = Clock::now();
     for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
     {
         if (mesh->isStatic) continue;
@@ -363,8 +369,10 @@ void Solver::Step()
             mesh->angularVelocity = RotationDifference(rot, mesh->lastRotation) / stepValue;
         }
     }
+    out.velocityUpdateMs = elapsed(phaseStart);
 
     // 7. Post-stabilization: alpha = 0.0f
+    phaseStart = Clock::now();
     if (postStabilization)
     {
         for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
@@ -374,7 +382,6 @@ void Solver::Step()
             Matrix6f lhs = mesh->GetGeneralizedMass() / (stepValue * stepValue);
             Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
 
-            // 5.2 Loop over forces
             for (Force* force : mesh->forces)
             {
                 force->ComputeConstraints(0.0f);
@@ -383,10 +390,9 @@ void Solver::Step()
                 const int numConstraints = force->numConstraints();
                 for (int i = 0; i < numConstraints; ++i)
                 {
-                    float lambda = isinf(force->constraintPoints[i].stiffness) ?force->constraintPoints[i].lambda: 0.f;
+                    float lambda = isinf(force->constraintPoints[i].stiffness) ? force->constraintPoints[i].lambda : 0.f;
                     float f = std::clamp(force->constraintPoints[i].penalty * force->constraintPoints[i].C + lambda, force->constraintPoints[i].fminMagnitude, force->constraintPoints[i].fmaxMagnitude);
 
-                    // Diagonal matrix, of sum of columns of hessian
                     Matrix6f H = force->constraintPoints[i].H;
                     Matrix6f G = Matrix6f::Zero();
                     for (int j = 0; j < 6; ++j)
@@ -400,9 +406,6 @@ void Solver::Step()
                 }
             }
 
-            // 5.3 Loop over energies
-
-            // 5.4 solve LDLT
             Vector6f dx = lhs.ldlt().solve(rhs);
             Eigen::Vector3f dx_lin = dx.head<3>();
             Eigen::Vector3f dx_ang = dx.tail<3>();
@@ -417,14 +420,34 @@ void Solver::Step()
             mesh->transform.SetRotation((dq * rot).normalized());
         }
     }
+    out.postStabMs = elapsed(phaseStart);
 
-    // Time accumulation
-    auto endTime = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<float, std::milli> stepDuration = endTime - startTime;
-    stepTimeAccumulator.push_back(stepDuration.count());
-    if (stepTimeAccumulator.size() > 100)
-        stepTimeAccumulator.erase(stepTimeAccumulator.begin());
-    averageStepTime = 0.0f;
-    for (float t : stepTimeAccumulator) averageStepTime += t;
-        averageStepTime /= stepTimeAccumulator.size();
+    out.totalSubstepMs = elapsed(stepStart);
+
+    // Rolling average
+    timingAccumulator.push_back(out);
+    if (timingAccumulator.size() > TIMING_WINDOW)
+        timingAccumulator.erase(timingAccumulator.begin());
+
+    SolverTimings avg{};
+    for (const auto& t : timingAccumulator)
+    {
+        avg.broadPhaseMs     += t.broadPhaseMs;
+        avg.warmstartMs      += t.warmstartMs;
+        avg.predictionMs     += t.predictionMs;
+        avg.primalDualMs     += t.primalDualMs;
+        avg.velocityUpdateMs += t.velocityUpdateMs;
+        avg.postStabMs       += t.postStabMs;
+        avg.totalSubstepMs   += t.totalSubstepMs;
+    }
+    float n = static_cast<float>(timingAccumulator.size());
+    this->timings.broadPhaseMs     = avg.broadPhaseMs / n;
+    this->timings.warmstartMs      = avg.warmstartMs / n;
+    this->timings.predictionMs     = avg.predictionMs / n;
+    this->timings.primalDualMs     = avg.primalDualMs / n;
+    this->timings.velocityUpdateMs = avg.velocityUpdateMs / n;
+    this->timings.postStabMs       = avg.postStabMs / n;
+    this->timings.totalSubstepMs   = avg.totalSubstepMs / n;
+
+    averageStepTime = this->timings.totalSubstepMs;
 }
