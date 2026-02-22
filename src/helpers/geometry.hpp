@@ -160,6 +160,9 @@ struct Mesh
 
     std::string name = "Mesh";
 
+    Eigen::Matrix3f cachedRotationMatrix;
+    Matrix6f        cachedGeneralizedMass;
+
     // ---- Mass properties ----
     float mass      = 0.0f;
     float density   = 0.0f;
@@ -198,35 +201,6 @@ struct Mesh
         transform.GetRotation(R);
         Eigen::Matrix3f Rmat = R.toRotationMatrix();
         return Rmat * inertiaTensorBodyInv * Rmat.transpose();
-    }
-
-    //================================//
-    Matrix6f GetGeneralizedMass() const
-    {
-        Matrix6f M = Matrix6f::Zero();
-        if (!isStatic && mass > 0.f)
-        {
-            M.block<3,3>(0,0) = Eigen::Matrix3f::Identity() * mass;
-
-            Quaternionf R;
-            transform.GetRotation(R);
-            Eigen::Matrix3f Rmat = R.toRotationMatrix();
-            M.block<3,3>(3,3) = Rmat * inertiaTensorBody * Rmat.transpose();
-        }
-        return M;
-    }
-
-    //================================//
-    Matrix6f GetGeneralizedMassInverse() const
-    {
-        Matrix6f Minv = Matrix6f::Zero();
-        if (!isStatic && mass > 0.f)
-        {
-            float invM = 1.f / mass;
-            Minv.block<3,3>(0,0) = Eigen::Matrix3f::Identity() * invM;
-            Minv.block<3,3>(3,3) = GetWorldInverseInertiaTensor();
-        }
-        return Minv;
     }
 
     //================================//

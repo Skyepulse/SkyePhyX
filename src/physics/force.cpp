@@ -7,10 +7,6 @@ Force::Force(Solver* solver, std::vector<Mesh*> linkedBodies, int numConstraintP
     next = solver->solverForces;
     solver->solverForces = this;
 
-    constraintPoints.clear();
-    for (int i = 0; i < numConstraintPoints; ++i)
-        constraintPoints.emplace_back(ConstraintPointProperties{});
-
     for (Mesh* mesh : linkedBodies)
         mesh->forces.push_back(this);
 }

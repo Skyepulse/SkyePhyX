@@ -33,20 +33,20 @@ struct Force
 
     std::vector<Mesh*> linkedBodies;
     Solver* solver;
-
-    std::vector<ConstraintPointProperties> constraintPoints;
+    ConstraintPointProperties constraintPoints[24];
 
     bool isManifold = false;
+    bool includeHessian = true;
 
     // HELPERS //
     //================================//
     void Disable()
     {
-        for (ConstraintPointProperties& cp : constraintPoints)
+        for (int i = 0; i < 24; ++i)
         {
-            cp.stiffness = 0.0f;
-            cp.penalty = 0.0f;
-            cp.lambda = 0.0f;
+            constraintPoints[i].stiffness = 0.0f;
+            constraintPoints[i].penalty = 0.0f;
+            constraintPoints[i].lambda = 0.0f;
         }
     }
 
@@ -135,6 +135,15 @@ struct Manifold: Force
     virtual int numBodies() const override { return 2; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const override;
+
+    void Reset(Solver* solver, Mesh* bodyA, Mesh* bodyB)
+    {
+        this->solver = solver;
+        this->bodyA = bodyA;
+        this->bodyB = bodyB;
+        this->linkedBodies = {bodyA, bodyB};
+        this->numContactPoints = 0;
+    }
 };
 
 #endif // FORCE_HPP

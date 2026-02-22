@@ -54,6 +54,8 @@ private:
     std::vector<float> stepTimeAccumulator;
     static constexpr int TIMING_WINDOW = 60;
     std::vector<SolverTimings> timingAccumulator;
+
+    Eigen::LDLT<Matrix6f> ldlt;
 };
 
 

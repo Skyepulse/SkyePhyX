@@ -25,6 +25,7 @@ Manifold::Manifold(Solver* solver, Mesh* bodyA, Mesh* bodyB)
     }
 
     isManifold = true;
+    includeHessian = false;
 }
 
 //================================//

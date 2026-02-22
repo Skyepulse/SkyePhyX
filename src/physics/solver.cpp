@@ -27,20 +27,14 @@ Solver::~Solver()
 void Solver::Start()
 {
     this->Clear();
-    //Mesh* cube = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(4.0f, 5.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
-    //cube->name = "Cube";
-    //Mesh* sphere = AddBody(ModelType_Sphere, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 5.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
-    //sphere->name = "Sphere";
-    //Force* spring = new Spring(this, cube, Eigen::Vector3f(0.5f, 0.5f, 0.5f), sphere, Eigen::Vector3f(0.0f, 0.0f, 0.0f), INFINITY, 10.0f, true);
     Mesh* ground = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(20.0f, 1.0f, 20.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
     ground->name = "Ground";
 
-    //Mesh* cube1 = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(-4.0f, 5.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::UnitRandom(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
-    //cube1->name = "Cube1";
-
-    Quaternionf rot = Eigen::AngleAxisf(M_PI / 4.0f, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(M_PI / 6.0f, Eigen::Vector3f::UnitX());
-    Mesh* cube2 = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 10.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), rot, Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
-    cube2->name = "Cube2";
+    for (int i = 0; i < 3; ++i)
+    {
+        Mesh* mesh = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 2.0f + i * 2.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::UnitRandom(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
+        mesh->name = "Cube " + std::to_string(i);
+    }
 }
 
 //================================//
@@ -117,6 +111,26 @@ void Solver::Step()
     };
     auto stepStart = Clock::now();
 
+    // 0. Cache Generalized Mass and Rotation Matrices
+    for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
+    {
+        if (mesh->isStatic) continue;
+
+        Quaternionf q;
+        mesh->transform.GetRotation(q);
+        mesh->cachedRotationMatrix = q.toRotationMatrix();
+
+        if (!mesh->isStatic && mesh->mass > 0.f)
+        {
+            Matrix6f& M = mesh->cachedGeneralizedMass;
+            M.setZero();
+            M.block<3,3>(0,0) = Eigen::Matrix3f::Identity() * mesh->mass;
+            M.block<3,3>(3,3) = mesh->cachedRotationMatrix 
+                            * mesh->inertiaTensorBody 
+                            * mesh->cachedRotationMatrix.transpose();
+        }
+    }
+
     // 1. Broad phase detection
     auto phaseStart = Clock::now();
     for (Mesh* mesh = solverBodies; mesh; mesh = mesh->next)
@@ -132,7 +146,7 @@ void Solver::Step()
             {
                 if (!isConstrainedTo(mesh, other))
                 {
-                    Manifold* manifold = new Manifold(this, mesh, other);
+                    new Manifold(this, mesh, other);
                 }
             }
         }
@@ -150,24 +164,6 @@ void Solver::Step()
 
         if (!isUsed)
         {
-            Manifold* manifold = dynamic_cast<Manifold*>(force);
-            if (manifold)
-            {
-                Eigen::Vector3f p1, p2;
-                manifold->bodyA->transform.GetPosition(p1);
-                manifold->bodyB->transform.GetPosition(p2);
-
-                float dist = (p1 - p2).norm();
-                float threshold = manifold->bodyA->detectionRadius + manifold->bodyB->detectionRadius;
-
-                if (dist < threshold * 1.1f)
-                {
-                    force->AddLineData(this->lineData);
-                    force = force->next;
-                    continue;
-                }
-            }
-
             Force* next = force->next;
             delete force;
             force = next;
@@ -271,7 +267,7 @@ void Solver::Step()
         {
             if (mesh->isStatic) continue;
 
-            Matrix6f lhs = mesh->GetGeneralizedMass() / (stepValue * stepValue);
+            Matrix6f lhs = mesh->cachedGeneralizedMass / (stepValue * stepValue);
             Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
 
             for (Force* force : mesh->forces)
@@ -294,11 +290,15 @@ void Solver::Step()
 
                     const Vector6f J = force->constraintPoints[i].J;
                     rhs += J * f;
-                    lhs += J * J.transpose() * force->constraintPoints[i].penalty + G;
+                    lhs.noalias() += J * J.transpose() * force->constraintPoints[i].penalty;
+
+                    if (force->includeHessian)
+                        lhs.noalias() += G;
                 }
             }
 
-            Vector6f dx = lhs.ldlt().solve(rhs);
+            ldlt.compute(lhs);
+            Vector6f dx = ldlt.solve(rhs);
             Eigen::Vector3f dx_lin = dx.head<3>();
             Eigen::Vector3f dx_ang = dx.tail<3>();
 
@@ -379,7 +379,7 @@ void Solver::Step()
         {
             if (mesh->isStatic) continue;
 
-            Matrix6f lhs = mesh->GetGeneralizedMass() / (stepValue * stepValue);
+            Matrix6f lhs = mesh->cachedGeneralizedMass / (stepValue * stepValue);
             Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
 
             for (Force* force : mesh->forces)
@@ -402,7 +402,10 @@ void Solver::Step()
 
                     const Vector6f J = force->constraintPoints[i].J;
                     rhs += J * f;
-                    lhs += J * J.transpose() * force->constraintPoints[i].penalty + G;
+                    lhs.noalias() += J * J.transpose() * force->constraintPoints[i].penalty;
+
+                    if (force->includeHessian)
+                        lhs.noalias() += G;
                 }
             }
 
