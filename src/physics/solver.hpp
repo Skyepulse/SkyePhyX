@@ -40,6 +40,7 @@ public:
     Mesh* AddBody(ModelType modelType, float density, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& scale, const Eigen::Vector3f& velocity, const Quaternionf rotation, const Eigen::Vector3f& angularVelocity, bool isStatic, const Eigen::Vector3f& color = Eigen::Vector3f(1.0f, 1.0f, 1.0f));
     Force* AddForce(std::unique_ptr<Force> force);
     void RemoveForce(Force* force);
+    void RemoveBody(Mesh* body);
 
     void RebuildPtrCaches()
     {
@@ -58,11 +59,11 @@ public:
     // Changing Parameters
     bool postStabilization = true;
     //int numSubsteps = 4;
-    int numIterations = 3;
+    int numIterations = 20;
     float alpha = 0.95f;
     float beta = 100'000.0f;
     float gamma = 0.99f;
-    float onPenetrationPenalty = 10000.0f;
+    float onPenetrationPenalty = 0.f;
 
     float stepValue = 1.0f / 60.0f;
 

@@ -1,5 +1,7 @@
 #include "RenderEngine.hpp"
 #include "../physics/solver.hpp"
+#include "../levels.h"
+#include "../GameManager.hpp"
 #include <numeric>
 #include <iostream>
 
@@ -34,7 +36,41 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::Begin("Solver Parameters");
+    ImGui::Begin("Simulation Parameters");
+    ImGui::Text("Level Selection");
+
+    int currentLevel = this->gameManager->GetCurrentLevel();
+    if (ImGui::BeginCombo("Level", names[currentLevel]))
+    {
+        for (int i = 0; i < numLevels; ++i)
+        {
+            bool selected = (currentLevel == i);
+            if (ImGui::Selectable(names[i], selected) && currentLevel != i)
+            {
+                this->gameManager->ChangeLevel(i);
+            }
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+
+    if (ImGui::Button("Reset"))
+        this->gameManager->ChangeLevel(currentLevel);
+
+    if (ImGui::Checkbox("Wireframe", &this->wireframe))
+    {
+        this->BuildPipeline();
+    }
+
+    ImGui::Checkbox("Show Force Lines", &this->showForceLines);
+    ImGui::Checkbox("Show Debug Points", &this->showDebugPoints);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::Text("Solver Params");
     ImGui::Checkbox("Post-Stabilization", &this->solver->postStabilization);
     ImGui::SliderInt("Num Iterations", &this->solver->numIterations, 1, 50);
     ImGui::SliderFloat("Alpha", &this->solver->alpha, 0.0f, 1.0f);
@@ -204,7 +240,7 @@ void RenderEngine::Render(void* userData)
             );
         }
 
-        if (this->numLines > 0)
+        if (this->numLines > 0 && this->showForceLines)
         {
             pass.SetPipeline(this->lineRenderPipeline.Get());
             pass.SetBindGroup(0, this->lineBindGroup.Get());
@@ -212,7 +248,7 @@ void RenderEngine::Render(void* userData)
             pass.Draw(2, this->numLines);
         }
 
-        if (this->debug && this->numDebugPoints > 0)
+        if (this->debug && this->numDebugPoints > 0 && this->showDebugPoints)
         {
             pass.SetPipeline(this->debugRenderPipeline.Get());
             pass.SetBindGroup(0, this->debugBindGroup.Get());
@@ -431,7 +467,7 @@ void RenderEngine::BuildPipeline()
     fragmentState.targets = &colorTarget;
 
     wgpu::PrimitiveState primitiveState{};
-    primitiveState.topology = wgpu::PrimitiveTopology::TriangleList;
+    primitiveState.topology = this->wireframe ? wgpu::PrimitiveTopology::LineList : wgpu::PrimitiveTopology::TriangleList;
     primitiveState.cullMode = wgpu::CullMode::None;
 
     wgpu::DepthStencilState depthStencilState{};

@@ -23,6 +23,9 @@ public:
         }
     }
 
+    void ChangeLevel(int levelIndex);
+    int GetCurrentLevel() const { return this->currentLevel; }
+
 private:
     std::unique_ptr<RenderEngine> renderEngine;
     std::unique_ptr<Solver> solver;
@@ -49,10 +52,18 @@ private:
 
     bool restartKeyWasPressed = false;
 
+    bool randomBoxSpawnedPressed = false;
+
     //================================//
     void ProcessEvents(float deltaTime);
     void UpdateCurrentTime();
     void AccumulateFrameRate();
+
+    //================================//
+    void SpawnRandomBox();
+
+    //================================//
+    int currentLevel = 0;
 };
 
 #endif // GAMEMANAGER_HPP

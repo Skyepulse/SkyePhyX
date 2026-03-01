@@ -12,7 +12,9 @@
 #include "../helpers/geometry.hpp"
 #include "../helpers/geometryGenerator.hpp"
 
+// forward declaration
 class RenderEngine;
+class GameManager;
 
 //================================//
 struct TimingCtx 
@@ -115,7 +117,7 @@ struct RenderTimings
 class RenderEngine
 {
 public:
-    RenderEngine(WgpuBundle* wgpuBundle, Solver* solver): solver(solver), wgpuBundle(wgpuBundle)
+    RenderEngine(WgpuBundle* wgpuBundle, Solver* solver, GameManager* gameManager): solver(solver), wgpuBundle(wgpuBundle), gameManager(gameManager)
     {
         WindowFormat windowFormat = wgpuBundle->GetWindowFormat();
         this->camera = std::make_unique<Camera>(
@@ -152,9 +154,13 @@ public:
 private:
     WgpuBundle* wgpuBundle;
     Solver* solver;
+    GameManager* gameManager;
     std::unique_ptr<Camera> camera;
 
     bool resizeFlag = true;
+    bool wireframe = false;
+    bool showForceLines = true;
+    bool showDebugPoints = true;
 
     wgpu::QuerySet gpuTimingQuerySet;
     wgpu::Buffer gpuTimingResolveBuffer;

@@ -1,4 +1,6 @@
 #include "GameManager.hpp"
+#include "helpers/math.hpp"
+#include "levels.h"
 
 #include <iostream>
 #ifdef __EMSCRIPTEN__
@@ -32,7 +34,7 @@ GameManager::GameManager(): window(nullptr, &glfwDestroyWindow)
 
     this->wgpuBundle = std::make_unique<WgpuBundle>(windowFormat);
     this->solver = std::make_unique<Solver>();
-    this->renderEngine = std::make_unique<RenderEngine>(this->wgpuBundle.get(), this->solver.get());
+    this->renderEngine = std::make_unique<RenderEngine>(this->wgpuBundle.get(), this->solver.get(), this);
 
     this->correctlyInitialized = true;
 }
@@ -57,6 +59,7 @@ void GameManager::RunMainLoop()
     float accumulator = 0.f;
 
     this->solver->Start();
+    ChangeLevel(0);
 
     while (!glfwWindowShouldClose(this->window.get()))
     {
@@ -195,8 +198,13 @@ void GameManager::ProcessEvents(float deltaTime)
 
     bool restartKeyPressed = glfwGetKey(this->window.get(), GLFW_KEY_R) == GLFW_PRESS;
     if (restartKeyPressed && !this->restartKeyWasPressed)
-        this->solver->Start();
+        ChangeLevel(this->currentLevel);
     this->restartKeyWasPressed = restartKeyPressed;
+
+    bool randomBoxSpawnedKeyPressed = glfwGetKey(this->window.get(), GLFW_KEY_B) == GLFW_PRESS;
+    if (randomBoxSpawnedKeyPressed && !this->randomBoxSpawnedPressed)
+        this->SpawnRandomBox();
+    this->randomBoxSpawnedPressed = randomBoxSpawnedKeyPressed;
 }
 
 //================================//
@@ -236,4 +244,50 @@ void GameManager::AccumulateFrameRate()
         this->frameRate = sum / static_cast<float>(this->frameRateAccumulator.size());
         this->frameRateAccumulator.clear();
     }
+}
+
+//================================//
+void GameManager::ChangeLevel(int levelIndex)
+{
+    if (levelIndex < 0 || levelIndex >= numLevels)
+        return;
+
+    this->currentLevel = levelIndex;
+    this->solver->Clear();
+
+    levels[levelIndex](this->solver.get(), this->renderEngine->GetCamera());
+}
+
+//================================//
+void GameManager::SpawnRandomBox()
+{
+    int numBodies = static_cast<int>(this->solver->bodyPtrs.size());
+
+    float maxScalePerAxis = 3.f;
+    float minScalePerAxis = 1.f;
+
+    float randomScaleX = rand01() * maxScalePerAxis;
+    if (randomScaleX < minScalePerAxis) randomScaleX = minScalePerAxis;
+
+    float randomScaleY = rand01() * maxScalePerAxis;
+    if (randomScaleY < minScalePerAxis) randomScaleY = minScalePerAxis;
+
+    float randomScaleZ = rand01() * maxScalePerAxis;
+    if (randomScaleZ < minScalePerAxis) randomScaleZ = minScalePerAxis;
+
+    Eigen::Vector3f randomScale = Eigen::Vector3f(randomScaleX, randomScaleY, randomScaleZ);
+
+    float minBounds[3] = { -10.f, 3.f, -10.f };
+    float maxBounds[3] = { 10.f, 10.f, 10.f };
+
+    Eigen::Vector3f randomPos = genRandomPos(minBounds, maxBounds);
+
+    Quaternionf randomRotation = Quaternionf::UnitRandom();
+
+    Eigen::Vector3f randomColor = Eigen::Vector3f(rand01(), rand01(), rand01());
+
+    Mesh* mesh = this->solver->AddBody(ModelType_Cube, 1.0f, 0.5f, randomPos, randomScale, Eigen::Vector3f(0.0f, 0.0f, 0.0f), randomRotation, Eigen::Vector3f(0.0f, 0.0f, 0.0f), false, randomColor);
+    mesh->name = "Random Box " + std::to_string(numBodies);
+
+    std::cout << "[INFO][GameManager] Spawned random box: " << mesh->name << std::endl;
 }

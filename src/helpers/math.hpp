@@ -57,4 +57,25 @@ inline Eigen::Matrix3f skew(const Eigen::Vector3f& v)
     return S;
 }
 
+//================================//
+inline float rand01()
+{
+    return static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+}
+
+//================================//
+inline Eigen::Vector3f genRandomPos(float minBounds[3], float maxBounds[3])
+{
+    float sizeX = maxBounds[0] - minBounds[0];
+    float X = minBounds[0] + rand01() * sizeX;
+
+    float sizeY = maxBounds[1] - minBounds[1];
+    float Y = minBounds[1] + rand01() * sizeX;
+
+    float sizeZ = maxBounds[2] - minBounds[2];
+    float Z = minBounds[2] + rand01() * sizeZ;
+
+    return Eigen::Vector3f(X, Y, Z);
+}
+
 #endif // MATH_HPP

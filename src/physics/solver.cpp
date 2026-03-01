@@ -2,6 +2,7 @@
 #include <chrono>
 #include <corecrt_math_defines.h>
 #include <iostream>
+#include "../constants.hpp"
 
 const Eigen::Vector3f GRAVITY(0.0f, -9.81f, 0.0f);
 
@@ -26,16 +27,6 @@ Solver::~Solver()
 void Solver::Start()
 {
     this->Clear();
-    Mesh* ground = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(20.0f, 1.0f, 20.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
-    ground->name = "Ground";
-
-    for (int i = 0; i < 3; ++i)
-    {
-        Mesh* mesh = AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, 2.0f + i * 2.0f, 0.0f), Eigen::Vector3f(1.0f, 1.0f, 1.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::UnitRandom(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false);
-        mesh->name = "Cube " + std::to_string(i);
-    }
-
-    this->RebuildPtrCaches();
 }
 
 //================================//
@@ -96,7 +87,24 @@ Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const 
 
     raw->solverIndex = static_cast<int>(solverBodies.size());
     solverBodies.push_back(std::move(newMesh));
+
+    this->RebuildPtrCaches();
     return raw;
+}
+
+//================================//
+void Solver::RemoveBody(Mesh* body)
+{
+    // forces removed in destructor
+    int idx = body->solverIndex;
+    int last = static_cast<int>(solverBodies.size()) - 1;
+    if (idx != last)
+    {
+        std::swap(solverBodies[idx], solverBodies[last]);
+        solverBodies[idx]->solverIndex = idx;
+    }
+    solverBodies.pop_back();
+    RebuildPtrCaches();
 }
 
 //================================//
@@ -373,6 +381,7 @@ void Solver::Step()
 
     // 6. Velocity update
     phaseStart = Clock::now();
+    std::vector<Mesh*> oob;
     for (Mesh* mesh : bodyPtrs)
     {
         if (mesh->isStatic) continue;
@@ -396,8 +405,20 @@ void Solver::Step()
             Quaternionf rot = mesh->transform.GetRotation();
             mesh->angularVelocity = RotationDifference(rot, mesh->lastRotation) / stepValue;
         }
+
+        Eigen::Vector3f p = mesh->transform.GetPosition();
+        if (p.x() < MINBOUNDS[0] || p.x() > MAXBOUNDS[0] ||
+            p.y() < MINBOUNDS[1] || p.y() > MAXBOUNDS[1] ||
+            p.z() < MINBOUNDS[2] || p.z() > MAXBOUNDS[2])
+        {
+            oob.push_back(mesh);
+        }
     }
     out.velocityUpdateMs = elapsed(phaseStart);
+
+    // 6.5 Remove out of bound bodies
+    for (Mesh* m : oob)
+        RemoveBody(m);
 
     // 7. Post-stabilization: alpha = 0.0f
     phaseStart = Clock::now();
