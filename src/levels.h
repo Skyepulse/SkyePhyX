@@ -108,20 +108,106 @@ static void MassStack(Solver* solver, Camera* camera)
 }
 
 //================================//
+static void FrictionSlope(Solver* solver, Camera* camera)
+{
+    float slopeDegrees = 30.f;
+    Eigen::Vector3f rotationPerAxis(slopeDegrees, 0.0f, 0.0f);
+    Quaternionf slopeRotation = Eigen::AngleAxisf(rotationPerAxis.x() * M_PI / 180.0f, Eigen::Vector3f::UnitX()) *
+                               Eigen::AngleAxisf(rotationPerAxis.y() * M_PI / 180.0f, Eigen::Vector3f::UnitY()) *
+                               Eigen::AngleAxisf(rotationPerAxis.z() * M_PI / 180.0f, Eigen::Vector3f::UnitZ());
+
+    Mesh* ground = solver->AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(35.0f, 1.0f, 10.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), slopeRotation, Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
+    ground->name = "Slope";
+
+    // N blocks, from left to right inclined like the slope, with increasing friction
+    int numBlocks = 10;
+    float startFriction = 0.0f;
+    float endFriction = 0.95f;
+
+    float heightOffset = 1.f;
+
+    for (int i = 0; i < numBlocks; i++)
+    {
+        float friction = startFriction + (endFriction - startFriction) * ((float)i / (float)(numBlocks - 1));
+
+        Mesh* block = solver->AddBody(
+            ModelType_Cube, 1.0f, friction,
+            Eigen::Vector3f(-15.f + i * 3.f, heightOffset, 0.0f), Eigen::Vector3f(2.f, 1.f, 2.f),
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            slopeRotation,
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            false,
+            Eigen::Vector3f(1.f - (float)i / (float)numBlocks, 0.2f, (float)i / (float)numBlocks)
+        );
+        block->name = "FrictionSlope_" + std::to_string(i);
+    }
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, -5.0f, 30.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+}
+
+//================================//
+static void MassSprings(Solver* solver, Camera* camera)
+{
+    Eigen::Vector3f commonScale(1.f, 1.f, 1.f);
+
+    float densityMultiplier = 2.5f;
+
+    int N = 8;
+    float spacing = 2.f;
+
+    std::vector<Mesh*> blocks;
+
+    //place them at 0y, 0z and line in x
+
+    float startX = -((N - 1) * spacing) * 0.5f;
+
+    for (int i = 0; i < N; i++)
+    {
+        Mesh* block = solver->AddBody(
+            ModelType_Cube, 1.0f * powf(densityMultiplier, (float)i), 0.5f,
+            Eigen::Vector3f(startX + i * spacing, 0.f, 0.0f), commonScale,
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            Quaternionf::Identity(),
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            false,
+            Eigen::Vector3f((float)i / (float)N, 0.2f, 1.f - (float)i / (float)N)
+        );
+        block->name = "MassSpring_" + std::to_string(i);
+        blocks.push_back(block);
+    }
+
+    // Connect each block to a rope force, at its position
+    for (auto block : blocks)
+    {
+        Eigen::Vector3f anchor = block->transform.GetPosition();
+        Force* rope = new Spring(solver, nullptr, anchor, block, Eigen::Vector3f::Zero(), 1000.f, 3.f, true);
+        solver->AddForce(std::unique_ptr<Force>(rope));
+    }
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, 0.0f, 30.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+}
+
+//================================//
 static void (*levels[])(Solver*, Camera*) = 
 {
     DefaultScene,
     Pyramid,
-    MassStack
+    MassStack,
+    FrictionSlope,
+    MassSprings
 };
 
 //================================//
 static const char* names[] = {
     "Default",
     "Pyramid",
-    "MassStack"
+    "MassStack",
+    "FrictionSlope",
+    "MassSprings"
 };
 
-static const int numLevels = 3;
+static const int numLevels = 5;
 
 #endif // levels.h
