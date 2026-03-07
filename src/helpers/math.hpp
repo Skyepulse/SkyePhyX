@@ -93,4 +93,53 @@ inline Eigen::Vector3f genRandomPos(float minBounds[3], float maxBounds[3])
     return Eigen::Vector3f(X, Y, Z);
 }
 
+//================================//
+// NEO HOOKEAN SPECIFIC MATHS     //
+//================================//
+enum class EigenProjectionMode
+{
+    CLAMP = 0,
+    ABSOLUTE = 1,
+    ADAPTIVE = 2
+};
+
+namespace NeoHookeanMath
+{
+    //================================//
+    struct SVDDecomposition
+    {
+        Eigen::Matrix3f U;
+        Eigen::Vector3f S;
+        Eigen::Matrix3f V;
+    };
+
+    //================================//
+    struct HessianDecomposition
+    {
+        float eigenValues[9];
+        Eigen::Vector3f scalingVectors[3];
+    };
+
+    //================================//
+    SVDDecomposition svd(const Eigen::Matrix3f& F);
+
+    //================================//
+    Eigen::Matrix3f DeformationGradient(const Eigen::Vector3f& p0, const Eigen::Vector3f& p1, const Eigen::Vector3f& p2, const Eigen::Vector3f& p3, const Eigen::Matrix3f& DmInv);
+
+    //================================//
+    float ComputeEnergyDensity(const Eigen::Matrix3f& F, float J, float mu, float lambda, float alpha);
+
+    //================================//
+    Eigen::Matrix3f ComputeFirstPiolaKirchhoff(const Eigen::Matrix3f& F, float J, float mu, float lambda, float alpha);
+
+    //================================//
+    HessianDecomposition ComputeEnergyHessian(const Eigen::Vector3f& sigma, float J, float mu, float lambda, float alpha);
+
+    //================================//
+    void ProjectEigenvalues(float* eigenvalues, int count, EigenProjectionMode mode, float trustRegionRho, float threshold = 0.01f, float epsilon = 1e-6f);
+
+    //================================//
+    Eigen::Matrix3f ReconstructVertexHessian(const SVDDecomposition& svd, const HessianDecomposition& hessDecomp, const float* projectedEigenValues, const Eigen::Vector3f& gradN, float restVolume);
+} // NEO HOOKEAN MATH NAMESPACE
+
 #endif // MATH_HPP
