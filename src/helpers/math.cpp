@@ -51,12 +51,12 @@ namespace NeoHookeanMath
     //================================//
     float ComputeEnergyDensity(const Eigen::Matrix3f& F, float J, float mu, float lambda, float alpha)
     {
-        // I known = trace(F^T * F)
-        float I1 = F.squaredNorm();
+        // I2 known = trace(F^T * F)
+        float I2 = F.squaredNorm();
 
-        // In 2D: Ψ = (μ/2)(I₁ − 2) + (λ/2)(J − α)²
-        // In 3D: Ψ = (μ/2)(I₁ − 3) + (λ/2)(J − α)²
-        return (mu * 0.5f) * (I1 - 3.f) + (lambda * 0.5f) * (J - alpha) * (J - alpha);
+        // In 2D: Ψ = (μ/2)(I2 − 2) + (λ/2)(J − α)²
+        // In 3D: Ψ = (μ/2)(I2 − 3) + (λ/2)(J − α)²
+        return (mu * 0.5f) * (I2 - 3.f) + (lambda * 0.5f) * (J - alpha) * (J - alpha);
     }
 
     //================================//
@@ -74,7 +74,7 @@ namespace NeoHookeanMath
 
                 -(F(0,1)*F(2,2) - F(0,2)*F(2,1)),
                 (F(0,0)*F(2,2) - F(0,2)*F(2,0)),
-                -(F(0,0)*F(2,1) - F(0,2)*F(2,0)),
+                -(F(0,0)*F(2,1) - F(0,1)*F(2,0)),
 
                 (F(0,1)*F(1,2) - F(0,2)*F(1,1)),
                 -(F(0,0)*F(1,2) - F(0,2)*F(1,0)),
@@ -102,7 +102,7 @@ namespace NeoHookeanMath
         // λ_flip_i  =                        2 · ∂Ψ/∂I₂  −  σᵢ · ∂Ψ/∂I₃
 
         // In Neo Hookean (3D), we have:
-        // Ψ = μ/2)(I₂ − 3) + (λ/2)(J − α)²
+        // Ψ = (μ/2)(I2 − 3) + (λ/2)(J − α)²
         // ∂Ψ/∂I₁ = 0
         // ∂Ψ/∂I₂ = μ/2
         // ∂Ψ/∂I₃ = λ(J − α)
@@ -138,7 +138,7 @@ namespace NeoHookeanMath
 
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> es(a);
         Eigen::Vector3f scalingEigenValues = es.eigenvalues();
-        Eigen::Vector3f scalingEigenVectors = es.eigenvectors();
+        Eigen::Matrix3f scalingEigenVectors = es.eigenvectors();
 
         result.eigenValues[0] = scalingEigenValues(0);
         result.eigenValues[1] = scalingEigenValues(1);
