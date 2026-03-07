@@ -12,6 +12,8 @@ const float ENERGY_STIFFNESS_MIN = 0.01;
 
 const float MAX_ROTATION_VELOCITY = 50.0f;
 
+static constexpr float MAX_VELOCITY = 500.0f;
+
 //================================//
 Solver::Solver()
 {
@@ -36,6 +38,8 @@ void Solver::Clear()
     solverBodies.clear();
     forcePtrs.clear();
     bodyPtrs.clear();
+
+    emergencyStop = false;
 }
 
 //================================//
@@ -132,8 +136,27 @@ void Solver::RemoveForce(Force* force)
 }
 
 //================================//
+bool Solver::CheckExplosion()
+{
+    for (Mesh* mesh : bodyPtrs)
+    {
+        Eigen::Vector3f vel = mesh->velocity;
+        if (vel.x() > MAX_VELOCITY || vel.y() > MAX_VELOCITY || vel.z() > MAX_VELOCITY ||
+            vel.x() < -MAX_VELOCITY || vel.y() < -MAX_VELOCITY || vel.z() < -MAX_VELOCITY)
+        {
+            std::cout << "[ERROR][Solver] Velocity exploded on body '" << mesh->name 
+                      << "' |vel| = " << vel.norm() << "\n";
+            return true;
+        }
+    }
+    return false;
+}
+
+//================================//
 void Solver::Step()
 {
+    if (this->emergencyStop) return;
+
     SolverTimings& out = this->timings;
 
     using Clock = std::chrono::high_resolution_clock;
@@ -339,6 +362,7 @@ void Solver::Step()
 
             ldlt.compute(lhs);
             Vector6f dx = ldlt.solve(rhs);
+
             Eigen::Vector3f dx_lin = dx.head<3>();
             Eigen::Vector3f dx_ang = dx.tail<3>();
 
@@ -367,7 +391,11 @@ void Solver::Step()
                     force->constraintPoints[i].lambda = force->constraintPoints[i].fmaxMagnitude;
 
                 if (std::abs(force->constraintPoints[i].lambda) >= force->constraintPoints[i].fracture)
-                    force->Disable();
+                {
+                    // TODO FIX: find a way to disable force while fixing propagation of stiffnesses.
+                    // force->Disable();
+                    // break;
+                }
 
                 if (force->constraintPoints[i].lambda > force->constraintPoints[i].fminMagnitude
                     && force->constraintPoints[i].lambda < force->constraintPoints[i].fmaxMagnitude)
@@ -414,6 +442,8 @@ void Solver::Step()
             oob.push_back(mesh);
         }
     }
+    this->emergencyStop = this->CheckExplosion();
+    if (this->emergencyStop) return;
     out.velocityUpdateMs = elapsed(phaseStart);
 
     // 6.5 Remove out of bound bodies

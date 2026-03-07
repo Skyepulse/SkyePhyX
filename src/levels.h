@@ -190,13 +190,117 @@ static void MassSprings(Solver* solver, Camera* camera)
 }
 
 //================================//
+static void JointPlayground(Solver* solver, Camera* camera)
+{
+    // Pendulum
+    Eigen::Vector3f commonScale(2.f, 0.7f, 0.7f);
+    Vector6f pendulumAnchors = Vector6f(INFINITY, INFINITY, INFINITY, INFINITY, 0.f, 0.f);
+    Eigen::Vector3f startAnchor(0.f, 5.f, 0.f);
+    int numLinks = 5;
+    
+    // start them horizontally
+    Mesh* lastBody = nullptr;
+    Eigen::Vector3f relLeft(-0.5f, 0.f, 0.f);
+    Eigen::Vector3f relRight(0.5f, 0.f, 0.f);
+    Eigen::Vector3f spawnPos(startAnchor.x() + commonScale.x() / 2.f, startAnchor.y(), startAnchor.z());
+    for (int i = 0; i < numLinks; i++)
+    {
+        Mesh* block = solver->AddBody(
+            ModelType_Cube, 1.0f, 0.5f,
+            spawnPos, commonScale,
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            Quaternionf::Identity(),
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            false,
+            Eigen::Vector3f((float)i / (float)numLinks, 1.f - (float)i / (float)numLinks, 0.2f)
+        );
+        block->name = "PendulumLink_" + std::to_string(i);
+
+        Force* joint = new Joint(solver, lastBody, lastBody ? relRight : startAnchor, block, relLeft, pendulumAnchors);
+        solver->AddForce(std::unique_ptr<Force>(joint));
+        lastBody = block;
+        spawnPos.x() += commonScale.x();
+    }
+
+    // bridge, same but last body has anchor into world
+    startAnchor = Eigen::Vector3f(-10.f, 5.f, -5.f);
+    commonScale = Eigen::Vector3f(2.f, 0.5f, 3.f);
+    numLinks = 12;
+    lastBody = nullptr;
+    spawnPos = Eigen::Vector3f(startAnchor.x() + commonScale.x() / 2.f, startAnchor.y(), startAnchor.z());
+
+    std::vector<int> breakeableJoints = {6};
+    for (int i = 0; i < numLinks; i++)
+    {
+        Mesh* block = solver->AddBody(
+            ModelType_Cube, 1.0f, 0.5f,
+            spawnPos, commonScale,
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            Quaternionf::Identity(),
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            false,
+            Eigen::Vector3f(1.f - (float)i / (float)numLinks, (float)i / (float)numLinks, 0.2f)
+        );
+        block->name = "BridgeLink_" + std::to_string(i);
+
+        Vector6f fractures = Vector6f::Constant(INFINITY);
+        if (std::find(breakeableJoints.begin(), breakeableJoints.end(), i) != breakeableJoints.end())
+        {
+            fractures.head<3>() = Eigen::Vector3f(5000.f, 5000.f, 5000.f);
+            fractures.tail<3>() = Eigen::Vector3f(500.f, 500.f, 500.f);
+        }
+
+        Force* joint = new Joint(solver, lastBody, lastBody ? relRight : startAnchor, block, relLeft, pendulumAnchors, fractures);
+        solver->AddForce(std::unique_ptr<Force>(joint));
+        lastBody = block;
+        spawnPos.x() += commonScale.x();
+    }
+
+    // anchor last block to world
+    Eigen::Vector3f endAnchor = startAnchor + Eigen::Vector3f(commonScale.x() * numLinks, 0.f, 0.f);
+    Force* lastJoint = new Joint(solver, nullptr, endAnchor, lastBody, relRight, pendulumAnchors);
+    solver->AddForce(std::unique_ptr<Force>(lastJoint));
+
+    Eigen::Vector3f bridgeCenter = (startAnchor + endAnchor) * 0.5f;
+    float bridgeZ = startAnchor.z();
+    float bridgeCenterX = bridgeCenter.x();
+    Eigen::Vector3f blockScale = Eigen::Vector3f(1.5f, 1.5f, 1.5f);
+
+    // Falling weights to break bridge
+    solver->AddBody(
+        ModelType_Cube, 1.0f, 0.5f,
+        Eigen::Vector3f(bridgeCenterX - 0.5f, 10.f, bridgeZ), blockScale,
+        Eigen::Vector3f::Zero(), Quaternionf::Identity(), Eigen::Vector3f::Zero(),
+        false, Eigen::Vector3f(1.f, 0.4f, 0.1f)
+    )->name = "Weight_1";
+
+    solver->AddBody(
+        ModelType_Cube, 1.0f, 0.5f,
+        Eigen::Vector3f(bridgeCenterX + 0.5f, 16.f, bridgeZ), blockScale,
+        Eigen::Vector3f::Zero(), Quaternionf::Identity(), Eigen::Vector3f::Zero(),
+        false, Eigen::Vector3f(1.f, 0.2f, 0.05f)
+    )->name = "Weight_2";
+
+    solver->AddBody(
+        ModelType_Cube, 1.0f, 0.5f,
+        Eigen::Vector3f(bridgeCenterX, 23.f, bridgeZ), blockScale,
+        Eigen::Vector3f::Zero(), Quaternionf::Identity(), Eigen::Vector3f::Zero(),
+        false, Eigen::Vector3f(0.8f, 0.1f, 0.05f)
+    )->name = "Weight_3";
+
+    camera->SetPosition(Eigen::Vector3f(5.0f, 2.0f, 35.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+}
+
+//================================//
 static void (*levels[])(Solver*, Camera*) = 
 {
     DefaultScene,
     Pyramid,
     MassStack,
     FrictionSlope,
-    MassSprings
+    MassSprings,
+    JointPlayground
 };
 
 //================================//
@@ -205,9 +309,10 @@ static const char* names[] = {
     "Pyramid",
     "MassStack",
     "FrictionSlope",
-    "MassSprings"
+    "MassSprings",
+    "JointPlayground"
 };
 
-static const int numLevels = 5;
+static const int numLevels = 6;
 
 #endif // levels.h

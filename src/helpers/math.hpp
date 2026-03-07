@@ -48,6 +48,21 @@ inline Quaternionf QuaternionFromDifference(const Eigen::Vector3f& v, float sign
 }
 
 //================================//
+inline Eigen::Vector3f QuaternionToRotVec(const Quaternionf& q)
+{
+    Quaternionf qn = q.w() >= 0.0f ? q : Quaternionf(-q.w(), -q.x(), -q.y(), -q.z());
+
+    Eigen::Vector3f v = qn.vec();
+    float sinHalf = v.norm();
+
+    if (sinHalf < 1e-6f)
+        return Eigen::Vector3f::Zero();
+
+    float halfAngle = std::atan2(sinHalf, qn.w());
+    return v * (2.0f * halfAngle / sinHalf);
+}
+
+//================================//
 inline Eigen::Matrix3f skew(const Eigen::Vector3f& v)
 {
     Eigen::Matrix3f S;

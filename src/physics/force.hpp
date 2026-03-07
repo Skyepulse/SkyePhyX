@@ -39,18 +39,9 @@ struct Force
     bool includeHessian = true;
     bool markedForRemoval = false;
 
-    // HELPERS //
-    //================================//
-    void Disable()
-    {
-        for (int i = 0; i < 24; ++i)
-        {
-            constraintPoints[i].stiffness = 0.0f;
-            constraintPoints[i].penalty = 0.0f;
-            constraintPoints[i].lambda = 0.0f;
-        }
-    }
+    bool disabled = false;
 
+    // HELPERS //
     virtual bool Initialize() = 0;
     virtual void ComputeConstraints(float alpha) = 0;
     virtual void ComputeDerivatives(Mesh* mesh) = 0;
@@ -58,7 +49,30 @@ struct Force
     virtual int numBodies() const = 0;
     virtual void AddLineData(std::vector<GPULineData>& data) const = 0;
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const = 0;
+
+    //================================//
+    void Disable()
+    {
+        disabled = true;
+        for (int i = 0; i < numConstraints(); ++i)
+        {
+            constraintPoints[i].lambda = 0.f;
+            constraintPoints[i].penalty = 0.f;
+            constraintPoints[i].C = 0.f;
+        }
+    }
 };
+
+//================================//
+inline bool isConstrainedTo(Mesh* mesh, Mesh* other)
+{
+    for (Force* f : mesh->forces)
+    {
+        if (std::find(f->linkedBodies.begin(), f->linkedBodies.end(), other) != f->linkedBodies.end())
+            return true;
+    }
+    return false;
+}
 
 //================================//
 struct Spring: Force
@@ -75,7 +89,7 @@ struct Spring: Force
     float restLength;
     bool isRope;
 
-    virtual bool Initialize() override { return true; }
+    virtual bool Initialize() override { return !disabled; }
     virtual void ComputeConstraints(float alpha) override;
     virtual void ComputeDerivatives(Mesh* mesh) override;
     virtual int numConstraints() const override { return 1; }
@@ -84,9 +98,42 @@ struct Spring: Force
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const override {};
 };
 
+//================================//
+struct Joint : Force
+{
+    static constexpr int NUM_CONSTRAINTS = 6;
+    Joint(Solver* solver, Mesh* bodyA, const Eigen::Vector3f& rA,
+          Mesh* bodyB, const Eigen::Vector3f& rB,
+          const Vector6f& stiffness = Vector6f::Constant(INFINITY),
+          const Vector6f& fractures = Vector6f::Constant(INFINITY));
+
+    Eigen::Vector3f rA;
+    Eigen::Vector3f rB;
+
+    Mesh* bodyA = nullptr;
+    Mesh* bodyB = nullptr;
+
+    Quaternionf restRotation;
+    float torqueArm = 1.0f;
+
+    Eigen::Vector3f C0_pos = Eigen::Vector3f::Zero();
+    Eigen::Vector3f C0_ang = Eigen::Vector3f::Zero();
+
+    virtual bool Initialize() override;
+    virtual void ComputeConstraints(float alpha) override;
+    virtual void ComputeDerivatives(Mesh* mesh) override;
+    virtual int numConstraints() const override { return NUM_CONSTRAINTS; }
+    virtual int numBodies() const override { return 2; }
+    virtual void AddLineData(std::vector<GPULineData>& data) const override;
+    virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const override {};
+};
+
+//================================//
+// MANIFOLD: MAIN RB COLLISIONS   //
+//================================//
+
 static constexpr float COLLISION_MARGIN = 0.0005f;
 static constexpr float STICK_THRESHOLD  = 0.01f;
-
 
 //================================//
 struct ManifoldContactInfo
@@ -101,17 +148,6 @@ struct ManifoldContactInfo
     Eigen::Vector3f C0  = Eigen::Vector3f::Zero();
     bool stick = false;
 };
-
-//================================//
-inline bool isConstrainedTo(Mesh* mesh, Mesh* other)
-{
-    for (Force* f : mesh->forces)
-    {
-        if (std::find(f->linkedBodies.begin(), f->linkedBodies.end(), other) != f->linkedBodies.end())
-            return true;
-    }
-    return false;
-}
 
 //================================//
 struct Manifold: Force
