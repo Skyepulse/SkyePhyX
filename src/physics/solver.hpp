@@ -3,6 +3,7 @@
 
 #include "../helpers/geometry.hpp"
 #include "force.hpp"
+#include "energy.hpp"
 #include <vector>
 
 //================================//
@@ -26,9 +27,11 @@ public:
 
     std::vector<std::unique_ptr<Mesh>> solverBodies;
     std::vector<std::unique_ptr<Force>> solverForces;
+    std::vector<std::unique_ptr<Energy>> solverEnergies;
 
     std::vector<Mesh*> bodyPtrs;
     std::vector<Force*> forcePtrs;
+    std::vector<Energy*> energyPtrs;
 
     std::vector<GPULineData> lineData;
     std::vector<GPUDebugPointData> debugPointData;
@@ -39,7 +42,10 @@ public:
 
     Mesh* AddBody(ModelType modelType, float density, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& scale, const Eigen::Vector3f& velocity, const Quaternionf rotation, const Eigen::Vector3f& angularVelocity, bool isStatic, const Eigen::Vector3f& color = Eigen::Vector3f(1.0f, 1.0f, 1.0f));
     Force* AddForce(std::unique_ptr<Force> force);
+    Energy* AddEnergy(std::unique_ptr<Energy> energy);
+    Mesh* AddParticle(float mass, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& velocity, bool isStatic, const Eigen::Vector3f& color = Eigen::Vector3f(1.0f, 1.0f, 1.0f));
     void RemoveForce(Force* force);
+    void RemoveEnergy(Energy* energy);
     void RemoveBody(Mesh* body);
 
     void RebuildPtrCaches()
@@ -51,6 +57,10 @@ public:
         forcePtrs.clear();
         forcePtrs.reserve(solverForces.size());
         for (auto& f : solverForces) forcePtrs.push_back(f.get());
+
+        energyPtrs.clear();
+        energyPtrs.reserve(solverEnergies.size());
+        for (auto& e : solverEnergies) energyPtrs.push_back(e.get());
     }
 
     float averageStepTime = 0.0f;
@@ -64,8 +74,12 @@ public:
     float beta = 100'000.0f;
     float gamma = 0.99f;
     float onPenetrationPenalty = 0.f;
-
     float stepValue = 1.0f / 60.0f;
+
+    EigenProjectionMode projectionMode = EigenProjectionMode::ABSOLUTE;
+    float trustRegionRho = 0.0f;
+    float prevTotalEnergy = 0.0f;
+    float trustRegionThreshold = 0.01f;
 
     bool emergencyStop = false;
 

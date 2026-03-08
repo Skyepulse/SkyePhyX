@@ -152,7 +152,7 @@ namespace NeoHookeanMath
     }
 
     //================================//
-    void ProjectEigenvalues(float* eigenvalues, int count, EigenProjectionMode mode, float trustRegionRho, float threshold = 0.01f, float epsilon = 1e-6f)
+    void ProjectEigenvalues(float* eigenvalues, int count, EigenProjectionMode mode, float trustRegionRho, float threshold, float epsilon)
     {
         bool useAbsolute = false;
 

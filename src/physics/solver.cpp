@@ -36,9 +36,13 @@ void Solver::Clear()
 {
     solverForces.clear();
     solverBodies.clear();
+    solverEnergies.clear();
     forcePtrs.clear();
     bodyPtrs.clear();
+    energyPtrs.clear();
 
+    prevTotalEnergy = 0.f;
+    trustRegionRho  = 0.f;
     emergencyStop = false;
 }
 
@@ -112,6 +116,21 @@ void Solver::RemoveBody(Mesh* body)
 }
 
 //================================//
+Mesh* Solver::AddParticle(float mass, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& velocity, bool isStatic, const Eigen::Vector3f& color)
+{
+    Eigen::Vector3f scale(0.1f, 0.1f, 0.1f);
+    Mesh* particle = AddBody(ModelType_Cube, mass / (scale.x() * scale.y() * scale.z()), friction, position, scale, velocity, Quaternionf::Identity(), Eigen::Vector3f::Zero(), isStatic, color);
+    particle->isParticle = true;
+
+    // Zero out inertia and every rotation related properties since it's a particle
+    particle->inertiaTensorBody = Eigen::Matrix3f::Zero();
+    particle->inertiaTensorBodyInv = Eigen::Matrix3f::Zero();
+    particle->angularVelocity = Eigen::Vector3f::Zero();
+    
+    return particle;
+}
+
+//================================//
 Force* Solver::AddForce(std::unique_ptr<Force> force)
 {
     Force* raw = force.get();
@@ -133,6 +152,30 @@ void Solver::RemoveForce(Force* force)
         solverForces[idx]->solverIndex = idx;
     }
     solverForces.pop_back(); // Memo for me: this triggers ~Force()
+}
+
+//================================//
+Energy* Solver::AddEnergy(std::unique_ptr<Energy> energy)
+{
+    Energy* raw = energy.get();
+    raw->solverIndex = static_cast<int>(solverEnergies.size());
+    solverEnergies.push_back(std::move(energy));
+    return raw;
+}
+
+//================================//
+void Solver::RemoveEnergy(Energy* energy)
+{
+    int idx = energy->solverIndex;
+    if (idx < 0) return;
+
+    int last = static_cast<int>(solverEnergies.size()) - 1;
+    if (idx != last)
+    {
+        std::swap(solverEnergies[idx], solverEnergies[last]);
+        solverEnergies[idx]->solverIndex = idx;
+    }
+    solverEnergies.pop_back();
 }
 
 //================================//
@@ -253,10 +296,31 @@ void Solver::Step()
     forcePtrs.clear();
     for (auto& f : solverForces) forcePtrs.push_back(f.get());
 
-    out.warmstartMs = elapsed(phaseStart);
 
     // 3. Energies Warmstarting
-    // TODO
+    energyPtrs.clear();
+    energyPtrs.reserve(solverEnergies.size());
+    for (auto& e : solverEnergies) energyPtrs.push_back(e.get());
+
+    std::vector<Energy*> energyToRemove;
+    for (Energy* energy : energyPtrs)
+    {
+        if (!energy->Initialize())
+        {
+            energyToRemove.push_back(energy);
+            continue;
+        }
+
+        energy->ComputeEnergyTerms(nullptr, projectionMode, trustRegionRho);
+        energy->AddLineData(this->lineData);
+    }
+
+    for (Energy* e : energyToRemove)
+        RemoveEnergy(e);
+    energyPtrs.clear();
+    for (auto& e : solverEnergies) energyPtrs.push_back(e.get());
+
+    out.warmstartMs = elapsed(phaseStart);
 
     // 4. Bodies Warmstarting
     phaseStart = Clock::now();
@@ -360,6 +424,17 @@ void Solver::Step()
                 }
             }
 
+            for (Energy* energy : mesh->energies)
+            {
+                energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
+
+                const Vector6f grad = energy->grad;
+                const Matrix6f hess = energy->hess;
+
+                rhs += grad;
+                lhs += hess;
+            }
+
             ldlt.compute(lhs);
             Vector6f dx = ldlt.solve(rhs);
 
@@ -374,7 +449,13 @@ void Solver::Step()
             mesh->transform.SetRotation((dq * rot).normalized());
         }
 
-        // 5.5 Dual Update
+        // 5.2 trust region rho update
+        if (projectionMode == EigenProjectionMode::ADAPTIVE)
+        {
+            // TODO... FOR NOW OK TO LEAVE EMPTY
+        }
+
+        // 5.3 Dual Update
         for (Force* force : forcePtrs)
         {
             force->ComputeConstraints(alpha);
@@ -486,6 +567,17 @@ void Solver::Step()
                     if (force->includeHessian)
                         lhs.noalias() += G;
                 }
+            }
+
+            for (Energy* energy : mesh->energies)
+            {
+                energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
+
+                const Vector6f grad = energy->grad;
+                const Matrix6f hess = energy->hess;
+
+                rhs += grad;
+                lhs += hess;
             }
 
             Vector6f dx = lhs.ldlt().solve(rhs);

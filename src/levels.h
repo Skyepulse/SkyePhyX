@@ -4,6 +4,8 @@
 #include "physics/solver.hpp"
 #include "helpers/camera.hpp"
 
+using namespace GeometryHelpers;
+
 //================================//
 static void DefaultScene(Solver* solver, Camera* camera)
 {
@@ -293,6 +295,45 @@ static void JointPlayground(Solver* solver, Camera* camera)
 }
 
 //================================//
+static void NeoHookeanTetTest(Solver* solver, Camera* camera)
+{
+    Mesh* ground = solver->AddBody(
+        ModelType_Cube, 1.0f, 0.5f,
+        Eigen::Vector3f(0.0f, -10.0f, 0.0f),
+        Eigen::Vector3f(30.0f, 1.0f, 30.0f),
+        Eigen::Vector3f::Zero(), Quaternionf::Identity(), Eigen::Vector3f::Zero(),
+        true
+    );
+    ground->name = "Ground";
+
+    float groundTop = -9.5f;
+
+    float particleMass = 1.0f;
+    float particleFriction = 0.5f;
+
+    float tetEdge = 3.0f;
+    float dropHeight = groundTop + 4.f;
+
+    // ── Row 1: Varying stiffness E, fixed ν = 0.30 ──
+    makeTet(solver, -12, dropHeight, 0, tetEdge,    50, 0.30f, Eigen::Vector3f(0.3f, 0.5f, 1.0f));  
+    makeTet(solver, -6, dropHeight, 0, tetEdge,   500, 0.30f, Eigen::Vector3f(0.4f, 0.6f, 1.0f));
+    makeTet(solver,  0, dropHeight, 0, tetEdge,  3000, 0.30f, Eigen::Vector3f(0.5f, 0.7f, 1.0f));
+    makeTet(solver,  6, dropHeight, 0, tetEdge,  8000, 0.30f, Eigen::Vector3f(0.6f, 0.8f, 1.0f));
+    makeTet(solver, 12, dropHeight, 0, tetEdge, 20000, 0.30f, Eigen::Vector3f(0.7f, 0.9f, 1.0f)); // nearly rigid
+
+    // ── Row 2: Varying ν (incompressibility), fixed E = 500 ──
+    float row2Z = -8.f;
+    makeTet(solver, -12, dropHeight, row2Z, tetEdge, 500, 0.2f, Eigen::Vector3f(1.0f, 0.3f, 0.3f));
+    makeTet(solver, -6, dropHeight, row2Z, tetEdge, 500, 0.25f, Eigen::Vector3f(1.0f, 0.4f, 0.4f));
+    makeTet(solver,  0, dropHeight, row2Z, tetEdge, 500, 0.35f, Eigen::Vector3f(1.0f, 0.5f, 0.5f));
+    makeTet(solver,  6, dropHeight, row2Z, tetEdge, 500, 0.42f, Eigen::Vector3f(1.0f, 0.6f, 0.6f));
+    makeTet(solver, 12, dropHeight, row2Z, tetEdge, 500, 0.48f, Eigen::Vector3f(1.0f, 0.7f, 0.7f));  // nearly incompressible
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, -2.0f, 25.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+}
+
+//================================//
 static void (*levels[])(Solver*, Camera*) = 
 {
     DefaultScene,
@@ -300,7 +341,8 @@ static void (*levels[])(Solver*, Camera*) =
     MassStack,
     FrictionSlope,
     MassSprings,
-    JointPlayground
+    JointPlayground,
+    NeoHookeanTetTest
 };
 
 //================================//
@@ -310,9 +352,10 @@ static const char* names[] = {
     "MassStack",
     "FrictionSlope",
     "MassSprings",
-    "JointPlayground"
+    "JointPlayground",
+    "NeoHookeanTetTest"
 };
 
-static const int numLevels = 6;
+static const int numLevels = 7;
 
 #endif // levels.h

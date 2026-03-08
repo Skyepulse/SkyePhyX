@@ -75,7 +75,7 @@ struct NeoHookeanFEM: Energy
 
     float trustRegionThreshold = 0.01f;
 
-    virtual bool Initialize() override;
+    virtual bool Initialize() override { return true; };
     virtual void ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho) override;
     virtual int  numBodies() const override { return 4; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;

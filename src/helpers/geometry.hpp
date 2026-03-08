@@ -11,6 +11,7 @@ using Matrix6f    = Eigen::Matrix<float, 6, 6>;
 // Forward declaration of Solver to avoid circular dependency
 class Solver;
 struct Force;
+struct Energy;
 
 //================================//
 enum ModelType
@@ -153,6 +154,7 @@ struct Mesh
 
     Transform transform;
     std::vector<Force*> forces;
+    std::vector<Energy*> energies;
 
     ModelType modelType;
     Eigen::Vector3f color;
@@ -252,5 +254,14 @@ struct Mesh
         return dx;
     }
 };
+
+//================================//
+// MORE GEOMETRY HELPERS (IDK WHERE TO PUT THEM)
+//================================//
+namespace GeometryHelpers
+{
+    //================================//
+    void makeTet(Solver* solver, float cx, float cy, float cz, float edge, float E, float nu, const Eigen::Vector3f& color, float mass = 1.0f, float friction = 0.5f);
+}
 
 #endif // GEOMETRY_HPP
