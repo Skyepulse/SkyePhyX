@@ -6,3 +6,4 @@ A real-time physics simulator using the AVBD paper solver.
 
 - [ ] Fix some rigidbodies interpenetration problems.
 - [ ] Fix on fracture propagation of decreasing stiffnesses.
+- [ ] Fix very low compressibility compressing objects by default.
