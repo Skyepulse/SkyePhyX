@@ -142,4 +142,52 @@ namespace NeoHookeanMath
     Eigen::Matrix3f ReconstructVertexHessian(const SVDDecomposition& svd, const HessianDecomposition& hessDecomp, const float* projectedEigenValues, const Eigen::Vector3f& gradN, float restVolume);
 } // NEO HOOKEAN MATH NAMESPACE
 
+//================================//
+// STVK SPECIFIC MATHS            //
+//================================//
+namespace STVKMath
+{
+    using F32 = Eigen::Matrix<float, 3, 2>;
+
+    //================================//
+    struct SVDDecomposition
+    {
+        Eigen::Matrix3f U;
+        Eigen::Vector2f S;
+        Eigen::Matrix2f V;
+    };
+
+    //================================//
+    struct HessianDecomposition
+    {
+        float eigenValues[4]; // [scale0, scale1, twist, flip]
+        Eigen::Vector2f scalingVectors[2];
+    };
+
+    //================================//
+    SVDDecomposition svd(const F32& F);
+
+    //================================//
+    F32 DeformationGradient(
+        const Eigen::Vector3f& p0, const Eigen::Vector3f& p1, const Eigen::Vector3f& p2,
+        const Eigen::Matrix2f& DmInv2D);
+
+    //================================//
+    float ComputeEnergyDensity(const F32& F, float mu, float lambda);
+
+    //================================//
+    F32 ComputeFirstPiolaKirchhoff(const F32& F, float mu, float lambda);
+
+    //================================//
+    HessianDecomposition ComputeEnergyHessian(const Eigen::Vector2f& sigma, float mu, float lambda);
+
+    //================================//
+    Eigen::Matrix3f ReconstructVertexHessian(
+        const SVDDecomposition& svd, const HessianDecomposition& hessDecomp,
+        const float* projectedEigenValues,
+        const Eigen::Vector2f& gradN_mat,
+        float restArea);
+
+} // STVK MATH NAMESPACE
+
 #endif // MATH_HPP

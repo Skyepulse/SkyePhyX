@@ -85,4 +85,40 @@ private:
     void HandleInvertedElement(Mesh* mesh, const Eigen::Matrix3f& F, float J, const Eigen::Vector3f& gradNi);
 };
 
+//================================//
+struct STVKFEM: Energy
+{
+    STVKFEM(Solver* solver,
+            Mesh* body0, Mesh* body1, Mesh* body2,
+            float youngsModulus, float poissonRatio);
+
+    Mesh* body0;
+    Mesh* body1;
+    Mesh* body2;
+
+    float restArea;
+
+    float lameMu;
+    float lameLambda;
+    float a;
+
+    float poissonRatio;
+    float youngsModulus;
+
+    Eigen::Matrix2f DmInv2D;
+
+    Eigen::Vector2f gradN0, gradN1, gradN2;
+
+    float trustRegionThreshold = 0.01f;
+
+    virtual bool Initialize() override { return true; };
+    virtual void ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho) override;
+    virtual int  numBodies() const override { return 3; }
+    virtual void AddLineData(std::vector<GPULineData>& data) const override;
+    virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const override {}
+
+private:
+    void HandleInvertedElement(Mesh* mesh, const STVKMath::F32& F, const Eigen::Vector2f& gradN);
+};
+
 #endif // ENERGY_HPP

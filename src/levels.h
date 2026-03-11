@@ -413,6 +413,60 @@ static void SoftSpheres(Solver* solver, Camera* camera, const LevelParameters& p
 }
 
 //================================//
+static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameters& params)
+{
+    const int   N       = 10;
+    const int   M       = 15;
+    const float spacing = 1.5f;
+    const float startX  = -(N - 1) * spacing * 0.5f;
+    const float startY  = 5.f;
+
+    const float startZ = -(M - 1) * spacing * 0.5f;
+
+    std::vector<Mesh*> parts(N * M);
+    for (int j = 0; j < M; j++)
+    {
+        for (int i = 0; i < N; i++)
+        {
+            Eigen::Vector3f pos(startX + i * spacing, startY, startZ + j * spacing);
+            Mesh* p = solver->AddParticle(
+                params.particleMass, 0.5f,
+                pos, Eigen::Vector3f::Zero(),
+                false,
+                Eigen::Vector3f((float)i / (N - 1), 0.3f, 1.f - (float)j / (M - 1))
+            );
+            p->isParticle = true;
+            p->name = "Cloth_" + std::to_string(i) + "_" + std::to_string(j);
+            parts[i + j * N] = p;
+        }
+    }
+
+    Vector6f pin = Vector6f::Constant(INFINITY);
+
+    Mesh* topLeft  = parts[0];
+    Mesh* topRight = parts[N - 1];
+    topLeft->isStatic = true;
+    topRight->isStatic = true;
+
+    for (int j = 0; j < M - 1; j++)
+    {
+        for (int i = 0; i < N - 1; i++)
+        {
+            Mesh* v00 = parts[i     +  j      * N];
+            Mesh* v10 = parts[(i+1) +  j      * N];
+            Mesh* v01 = parts[i     + (j + 1) * N];
+            Mesh* v11 = parts[(i+1) + (j + 1) * N];
+
+            solver->AddEnergy(std::make_unique<STVKFEM>(solver, v00, v10, v11, params.E, params.nu));
+            solver->AddEnergy(std::make_unique<STVKFEM>(solver, v00, v11, v01, params.E, params.nu));
+        }
+    }
+
+    camera->SetPosition(Eigen::Vector3f(0.f, startY + 10.f, startZ + (M - 1) * spacing + 15.f));
+    camera->LookAtDirection(Eigen::Vector3f(0.f, -0.5f, -1.f).normalized());
+}
+
+//================================//
 static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
 {
     DefaultScene,
@@ -423,7 +477,8 @@ static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
     JointPlayground,
     NeoHookeanTetTest,
     NeoHookeanMesh,
-    SoftSpheres
+    SoftSpheres,
+    ClothSimulation
 };
 
 //================================//
@@ -436,9 +491,10 @@ static const char* names[] = {
     "JointPlayground",
     "NeoHookeanTetTest",
     "SoftBeam",
-    "SoftSpheres"
+    "SoftSpheres",
+    "ClothSimulation"
 };
 
-static const int numLevels = 9;
+static const int numLevels = 10;
 
 #endif // levels.h
