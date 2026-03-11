@@ -5,3 +5,8 @@ build-web/
 *.sh
 data/
 web-data/
+
+# Claud
+CLAUDE.md
+.claudeignore
+docs/

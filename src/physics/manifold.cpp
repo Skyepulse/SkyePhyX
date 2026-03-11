@@ -258,18 +258,22 @@ void Manifold::ComputeDerivatives(Mesh* mesh)
 //================================//
 void Manifold::AddLineData(std::vector<GPULineData>& data) const
 {
-    // Line from center of bodyA to center of bodyB
-    Eigen::Vector3f posA = bodyA->transform.GetPosition();
-    Eigen::Vector3f posB = bodyB->transform.GetPosition();
+    for (int i = 0; i < numContactPoints; i++)
+    {
+        if (contactPoints[i].penetration <= 0.f) continue;
 
-    GPULineData link;
-    Eigen::Map<Eigen::Vector3f>(link.start) = posA;
-    Eigen::Map<Eigen::Vector3f>(link.end)   = posB;
-    link.color[0] = 1.f;
-    link.color[1] = 0.f;
-    link.color[2] = 0.f;
-    link.color[3] = 1.f;
-    data.push_back(link);
+        Eigen::Vector3f start = contactPoints[i].position;
+        Eigen::Vector3f end   = start + contactPoints[i].normal * contactPoints[i].penetration;
+
+        GPULineData line;
+        Eigen::Map<Eigen::Vector3f>(line.start) = start;
+        Eigen::Map<Eigen::Vector3f>(line.end)   = end;
+        line.color[0] = 1.f;
+        line.color[1] = 0.f;
+        line.color[2] = 0.f;
+        line.color[3] = 1.f;
+        data.push_back(line);
+    }
 }
 
 //================================//

@@ -262,6 +262,12 @@ namespace GeometryHelpers
 {
     //================================//
     void makeTet(Solver* solver, float cx, float cy, float cz, float edge, float E, float nu, const Eigen::Vector3f& color, float mass = 1.0f, float friction = 0.5f);
+
+    //================================//
+    void makeTetSphere(Solver* solver, float cx, float cy, float cz, float radius, float res, float E, float nu, const Eigen::Vector3f& color, float mass = 1.0f, float friction = 0.5f);
+
+    //================================//
+    void makeTetVolume(Solver* solver, float ox, float oy, float oz, int nx, int ny, int nz, float cellSize, float E, float nu, const Eigen::Vector3f& color, float particleMass = 1.0f, float friction = 0.5f, bool pinMinX = false);
 }
 
 #endif // GEOMETRY_HPP

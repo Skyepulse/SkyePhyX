@@ -6,6 +6,7 @@
 #include "rendering/RenderEngine.hpp"
 #include "constants.hpp"
 #include "physics/solver.hpp"
+#include "levels.h"
 
 //================================//
 class GameManager
@@ -25,6 +26,8 @@ public:
 
     void ChangeLevel(int levelIndex);
     int GetCurrentLevel() const { return this->currentLevel; }
+    
+    LevelParameters levelParameters = { 8000.0f, 0.3f, 1.0f };
 
 private:
     std::unique_ptr<RenderEngine> renderEngine;

@@ -69,7 +69,7 @@ public:
     // Changing Parameters
     bool postStabilization = true;
     //int numSubsteps = 4;
-    int numIterations = 20;
+    int numIterations = 10;
     float alpha = 0.95f;
     float beta = 100'000.0f;
     float gamma = 0.99f;

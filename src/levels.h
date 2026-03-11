@@ -7,7 +7,15 @@
 using namespace GeometryHelpers;
 
 //================================//
-static void DefaultScene(Solver* solver, Camera* camera)
+struct LevelParameters
+{
+    float E;
+    float nu;
+    float particleMass;
+};
+
+//================================//
+static void DefaultScene(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     Mesh* ground = solver->AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(20.0f, 1.0f, 20.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
     ground->name = "Ground";
@@ -17,7 +25,7 @@ static void DefaultScene(Solver* solver, Camera* camera)
 }
 
 //================================//
-static void Pyramid(Solver* solver, Camera* camera)
+static void Pyramid(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     Mesh* ground = solver->AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(20.0f, 1.0f, 20.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
     ground->name = "Ground";
@@ -74,7 +82,7 @@ static void Pyramid(Solver* solver, Camera* camera)
 }
 
 //================================//
-static void MassStack(Solver* solver, Camera* camera)
+static void MassStack(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     Mesh* ground = solver->AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(20.0f, 1.0f, 20.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
     ground->name = "Ground";
@@ -110,7 +118,7 @@ static void MassStack(Solver* solver, Camera* camera)
 }
 
 //================================//
-static void FrictionSlope(Solver* solver, Camera* camera)
+static void FrictionSlope(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     float slopeDegrees = 30.f;
     Eigen::Vector3f rotationPerAxis(slopeDegrees, 0.0f, 0.0f);
@@ -149,7 +157,7 @@ static void FrictionSlope(Solver* solver, Camera* camera)
 }
 
 //================================//
-static void MassSprings(Solver* solver, Camera* camera)
+static void MassSprings(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     Eigen::Vector3f commonScale(1.f, 1.f, 1.f);
 
@@ -192,7 +200,7 @@ static void MassSprings(Solver* solver, Camera* camera)
 }
 
 //================================//
-static void JointPlayground(Solver* solver, Camera* camera)
+static void JointPlayground(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     // Pendulum
     Eigen::Vector3f commonScale(2.f, 0.7f, 0.7f);
@@ -295,7 +303,7 @@ static void JointPlayground(Solver* solver, Camera* camera)
 }
 
 //================================//
-static void NeoHookeanTetTest(Solver* solver, Camera* camera)
+static void NeoHookeanTetTest(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     Mesh* ground = solver->AddBody(
         ModelType_Cube, 1.0f, 0.5f,
@@ -308,7 +316,7 @@ static void NeoHookeanTetTest(Solver* solver, Camera* camera)
 
     float groundTop = -9.5f;
 
-    float particleMass = 1.0f;
+    float particleMass = params.particleMass;
     float particleFriction = 0.5f;
 
     float tetEdge = 3.0f;
@@ -329,12 +337,83 @@ static void NeoHookeanTetTest(Solver* solver, Camera* camera)
     makeTet(solver,  6, dropHeight, row2Z, tetEdge, 500, 0.42f, Eigen::Vector3f(1.0f, 0.6f, 0.6f));
     makeTet(solver, 12, dropHeight, row2Z, tetEdge, 500, 0.48f, Eigen::Vector3f(1.0f, 0.7f, 0.7f));  // nearly incompressible
 
+    // Front row 
+    float row3Z = 8.f;
+    makeTet(solver, 0, dropHeight, row3Z, tetEdge, params.E, params.nu, Eigen::Vector3f(0.3f, 0.0f, 1.3f));
+
     camera->SetPosition(Eigen::Vector3f(0.0f, -2.0f, 25.0f));
     camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
 }
 
 //================================//
-static void (*levels[])(Solver*, Camera*) = 
+static void NeoHookeanMesh(Solver* solver, Camera* camera, const LevelParameters& params)
+{
+    /*
+    Mesh* ground = solver->AddBody(
+        ModelType_Cube, 1.0f, 0.5f,
+        Eigen::Vector3f(0.0f, -10.0f, 0.0f),
+        Eigen::Vector3f(40.0f, 1.0f, 20.0f),
+        Eigen::Vector3f::Zero(), Quaternionf::Identity(), Eigen::Vector3f::Zero(),
+        true
+    );
+    ground->name = "Ground";
+    */
+
+    const int   N    = 3;
+    const float cs   = 0.9f;    // cell size (world units)
+    const float E    = params.E;
+    const float nu   = params.nu;
+    const float mass = params.particleMass;
+
+    const int nx = 3 * N;
+    const int ny = N;
+    const int nz = N;
+
+    float groundTop = -3.5f;
+    float beamX     = -3.0f;
+    float beamY     = groundTop + 3.5f;
+    float beamZ     = -(nz - 1) * cs * 0.5f;
+
+    makeTetVolume( solver, beamX, beamY, beamZ, nx, ny, nz, cs, E, nu, Eigen::Vector3f(0.35f, 0.65f, 1.0f), mass, 0.5f, true);
+
+    float beamCentreX = beamX + (nx - 1) * cs * 0.5f;
+    float beamCentreY = beamY + (ny - 1) * cs * 0.5f;
+    camera->SetPosition(Eigen::Vector3f(beamCentreX, beamCentreY + 5.0f, 22.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, -0.22f, -1.0f));
+}
+
+//================================//
+static void SoftSpheres(Solver* solver, Camera* camera, const LevelParameters& params)
+{
+    float radius = 3.0;
+    float res = 2;
+
+    Mesh* ground = solver->AddBody(
+        ModelType_Cube, 1.0f, 0.5f,
+        Eigen::Vector3f(0.0f, -10.0f, 0.0f),
+        Eigen::Vector3f(40.0f, 1.0f, 20.0f),
+        Eigen::Vector3f::Zero(), Quaternionf::Identity(), Eigen::Vector3f::Zero(),
+        true
+    );
+    ground->name = "Ground";
+
+    float groundTop = -9.5f;
+    float SpawnY = groundTop + radius + 5.0f;
+
+    Eigen::Vector3f Spawn1 = Eigen::Vector3f(-2.f*radius, SpawnY, -2.f*radius);
+    Eigen::Vector3f Spawn2 = Eigen::Vector3f(0.0f, SpawnY, 0.0f);
+    Eigen::Vector3f Spawn3 = Eigen::Vector3f(2.f*radius, SpawnY, -2.f*radius);
+
+    //makeTetSphere(solver, Spawn1.x(), Spawn1.y(), Spawn1.z(), radius, res, 500.f, 0.4f, Eigen::Vector3f(0.5f, 0.5f, 1.0f), params.particleMass);
+    makeTetSphere(solver, Spawn2.x(), Spawn2.y(), Spawn2.z(), radius, res, params.E, params.nu, Eigen::Vector3f(1.0f, 0.5f, 0.5f), params.particleMass);
+    //makeTetSphere(solver, Spawn3.x(), Spawn3.y(), Spawn3.z(), radius, res, 20000, 0.49, Eigen::Vector3f(0.5f, 1.0f, 0.5f), params.particleMass);
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, -2.0f, 25.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+}
+
+//================================//
+static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
 {
     DefaultScene,
     Pyramid,
@@ -342,7 +421,9 @@ static void (*levels[])(Solver*, Camera*) =
     FrictionSlope,
     MassSprings,
     JointPlayground,
-    NeoHookeanTetTest
+    NeoHookeanTetTest,
+    NeoHookeanMesh,
+    SoftSpheres
 };
 
 //================================//
@@ -353,9 +434,11 @@ static const char* names[] = {
     "FrictionSlope",
     "MassSprings",
     "JointPlayground",
-    "NeoHookeanTetTest"
+    "NeoHookeanTetTest",
+    "SoftBeam",
+    "SoftSpheres"
 };
 
-static const int numLevels = 7;
+static const int numLevels = 9;
 
 #endif // levels.h

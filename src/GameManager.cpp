@@ -1,6 +1,5 @@
 #include "GameManager.hpp"
 #include "helpers/math.hpp"
-#include "levels.h"
 
 #include <iostream>
 #ifdef __EMSCRIPTEN__
@@ -255,7 +254,7 @@ void GameManager::ChangeLevel(int levelIndex)
     this->currentLevel = levelIndex;
     this->solver->Clear();
 
-    levels[levelIndex](this->solver.get(), this->renderEngine->GetCamera());
+    levels[levelIndex](this->solver.get(), this->renderEngine->GetCamera(), this->levelParameters);
 }
 
 //================================//

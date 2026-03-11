@@ -259,8 +259,8 @@ namespace CollisionSpace
         Eigen::Matrix3f invRotA = rotA.transpose();
         Eigen::Matrix3f invRotB = rotB.transpose();
 
-        contact.rA = invRotA * (contact.position - posA);
-        contact.rB = invRotB * (contact.position - posB);
+        contact.rA = invRotA * (closestCollisionPointOnA - posA);
+        contact.rB = invRotB * (closestCollisionPointOnB - posB);
 
         contact.id = createID(AxisType::EDGE, axisA, axisB, 0);
         outCollision.numContacts = 1; // Only one possible contact for sure
