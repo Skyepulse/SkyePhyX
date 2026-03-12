@@ -441,8 +441,6 @@ static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameter
         }
     }
 
-    Vector6f pin = Vector6f::Constant(INFINITY);
-
     Mesh* topLeft  = parts[0];
     Mesh* topRight = parts[N - 1];
     topLeft->isStatic = true;
@@ -466,6 +464,62 @@ static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameter
     camera->LookAtDirection(Eigen::Vector3f(0.f, -0.5f, -1.f).normalized());
 }
 
+static void SafetyNet(Solver* solver, Camera* camera, const LevelParameters& params)
+{
+    int count = 15;
+    const float spacing = 0.5f;
+
+    const float startX  = -(count - 1) * spacing * 0.5f;
+    const float startZ = -(count - 1) * spacing * 0.5f;
+    const float startY  = -10.f;
+
+    std::vector<Mesh*> parts(count * count);
+    for (int j = 0; j < count; j++)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            Eigen::Vector3f pos(startX + i * spacing, startY, startZ + j * spacing);
+            Mesh* p = solver->AddParticle(
+                params.particleMass, 0.5f,
+                pos, Eigen::Vector3f::Zero(),
+                false,
+                Eigen::Vector3f((float)i / (count - 1), 0.3f, 1.f - (float)j / (count - 1))
+            );
+            p->isParticle = true;
+            p->name = "Cloth_" + std::to_string(i) + "_" + std::to_string(j);
+            parts[i + j * count] = p;
+        }
+    }
+
+    Mesh* topLeft  = parts[0];
+    Mesh* topRight = parts[count - 1];
+    Mesh* bottomLeft = parts[(count - 1) * count];
+    Mesh* bottomRight = parts[count * count - 1];
+
+    topLeft->isStatic = true;
+    topRight->isStatic = true;
+    bottomLeft->isStatic = true;
+    bottomRight->isStatic = true;
+
+    for (int j = 0; j < count - 1; j++)
+    {
+        for (int i = 0; i < count - 1; i++)
+        {
+            Mesh* v00 = parts[i     +  j      * count];
+            Mesh* v10 = parts[(i+1) +  j      * count];
+            Mesh* v01 = parts[i     + (j + 1) * count];
+            Mesh* v11 = parts[(i+1) + (j + 1) * count];
+
+            solver->AddEnergy(std::make_unique<STVKFEM>(solver, v00, v10, v11, params.E, params.nu));
+            solver->AddEnergy(std::make_unique<STVKFEM>(solver, v00, v11, v01, params.E, params.nu));
+        }
+    }
+
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, -3.0f, 25.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+}
+
 //================================//
 static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
 {
@@ -478,7 +532,8 @@ static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
     NeoHookeanTetTest,
     NeoHookeanMesh,
     SoftSpheres,
-    ClothSimulation
+    ClothSimulation,
+    SafetyNet
 };
 
 //================================//
@@ -492,9 +547,10 @@ static const char* names[] = {
     "NeoHookeanTetTest",
     "SoftBeam",
     "SoftSpheres",
-    "ClothSimulation"
+    "ClothSimulation",
+    "SafetyNet"
 };
 
-static const int numLevels = 10;
+static const int numLevels = 11;
 
 #endif // levels.h
