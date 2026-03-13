@@ -323,23 +323,23 @@ static void NeoHookeanTetTest(Solver* solver, Camera* camera, const LevelParamet
     float dropHeight = groundTop + 4.f;
 
     // ── Row 1: Varying stiffness E, fixed ν = 0.30 ──
-    makeTet(solver, -12, dropHeight, 0, tetEdge,    50, 0.30f, Eigen::Vector3f(0.3f, 0.5f, 1.0f));  
-    makeTet(solver, -6, dropHeight, 0, tetEdge,   500, 0.30f, Eigen::Vector3f(0.4f, 0.6f, 1.0f));
-    makeTet(solver,  0, dropHeight, 0, tetEdge,  3000, 0.30f, Eigen::Vector3f(0.5f, 0.7f, 1.0f));
-    makeTet(solver,  6, dropHeight, 0, tetEdge,  8000, 0.30f, Eigen::Vector3f(0.6f, 0.8f, 1.0f));
-    makeTet(solver, 12, dropHeight, 0, tetEdge, 20000, 0.30f, Eigen::Vector3f(0.7f, 0.9f, 1.0f)); // nearly rigid
+    makeTet(solver, -12, dropHeight, 0, tetEdge,    50, 0.30f, Eigen::Vector3f(0.3f, 0.5f, 1.0f), params.particleMass);  
+    makeTet(solver, -6, dropHeight, 0, tetEdge,   500, 0.30f, Eigen::Vector3f(0.4f, 0.6f, 1.0f), params.particleMass);
+    makeTet(solver,  0, dropHeight, 0, tetEdge,  3000, 0.30f, Eigen::Vector3f(0.5f, 0.7f, 1.0f), params.particleMass);
+    makeTet(solver,  6, dropHeight, 0, tetEdge,  8000, 0.30f, Eigen::Vector3f(0.6f, 0.8f, 1.0f), params.particleMass);
+    makeTet(solver, 12, dropHeight, 0, tetEdge, 20000, 0.30f, Eigen::Vector3f(0.7f, 0.9f, 1.0f), params.particleMass); // nearly rigid
 
     // ── Row 2: Varying ν (incompressibility), fixed E = 500 ──
     float row2Z = -8.f;
-    makeTet(solver, -12, dropHeight, row2Z, tetEdge, 500, 0.2f, Eigen::Vector3f(1.0f, 0.3f, 0.3f));
-    makeTet(solver, -6, dropHeight, row2Z, tetEdge, 500, 0.25f, Eigen::Vector3f(1.0f, 0.4f, 0.4f));
-    makeTet(solver,  0, dropHeight, row2Z, tetEdge, 500, 0.35f, Eigen::Vector3f(1.0f, 0.5f, 0.5f));
-    makeTet(solver,  6, dropHeight, row2Z, tetEdge, 500, 0.42f, Eigen::Vector3f(1.0f, 0.6f, 0.6f));
-    makeTet(solver, 12, dropHeight, row2Z, tetEdge, 500, 0.48f, Eigen::Vector3f(1.0f, 0.7f, 0.7f));  // nearly incompressible
+    makeTet(solver, -12, dropHeight, row2Z, tetEdge, 500, 0.2f, Eigen::Vector3f(1.0f, 0.3f, 0.3f), params.particleMass);
+    makeTet(solver, -6, dropHeight, row2Z, tetEdge, 500, 0.25f, Eigen::Vector3f(1.0f, 0.4f, 0.4f), params.particleMass);
+    makeTet(solver,  0, dropHeight, row2Z, tetEdge, 500, 0.35f, Eigen::Vector3f(1.0f, 0.5f, 0.5f), params.particleMass);
+    makeTet(solver,  6, dropHeight, row2Z, tetEdge, 500, 0.42f, Eigen::Vector3f(1.0f, 0.6f, 0.6f), params.particleMass);
+    makeTet(solver, 12, dropHeight, row2Z, tetEdge, 500, 0.48f, Eigen::Vector3f(1.0f, 0.7f, 0.7f), params.particleMass);  // nearly incompressible
 
     // Front row 
     float row3Z = 8.f;
-    makeTet(solver, 0, dropHeight, row3Z, tetEdge, params.E, params.nu, Eigen::Vector3f(0.3f, 0.0f, 1.3f));
+    makeTet(solver, 0, dropHeight, row3Z, tetEdge, params.E, params.nu, Eigen::Vector3f(0.3f, 0.0f, 1.3f), params.particleMass);
 
     camera->SetPosition(Eigen::Vector3f(0.0f, -2.0f, 25.0f));
     camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
