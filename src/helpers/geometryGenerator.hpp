@@ -3,7 +3,11 @@
 
 #include "geometry.hpp"
 #include <vector>
-#include <corecrt_math_defines.h>
+#include <cmath>
+
+#ifndef M_PI
+constexpr double M_PI = 3.14159265358979323846;
+#endif
 
 //================================//
 struct MeshData

@@ -1,6 +1,6 @@
 #include "solver.hpp"
 #include <chrono>
-#include <corecrt_math_defines.h>
+#include <cmath>
 #include <iostream>
 #include "../constants.hpp"
 
