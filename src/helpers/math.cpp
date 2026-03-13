@@ -49,23 +49,20 @@ namespace NeoHookeanMath
     }
 
     //================================//
-    float ComputeEnergyDensity(const Eigen::Matrix3f& F, float J, float mu, float lambda, float alpha)
+    float ComputeEnergyDensity(const Eigen::Matrix3f& F, float J, float mu, float lambda)
     {
-        // I2 known = trace(F^T * F)
-        float I2 = F.squaredNorm();
-
-        // In 2D: Ψ = (μ/2)(I2 − 2) + (λ/2)(J − α)²
-        // In 3D: Ψ = (μ/2)(I2 − 3) + (λ/2)(J − α)²
-        return (mu * 0.5f) * (I2 - 3.f) + (lambda * 0.5f) * (J - alpha) * (J - alpha);
+        // Ψ = (μ/2)(I₁ − 3) − μ·ln(J) + (λ/2)(ln J)²
+        float I1 = F.squaredNorm();
+        float logJ = std::log(J);
+        return (mu * 0.5f) * (I1 - 3.f) - mu * logJ + (lambda * 0.5f) * logJ * logJ;
     }
 
     //================================//
-    Eigen::Matrix3f ComputeFirstPiolaKirchhoff(const Eigen::Matrix3f& F, float J, float mu, float lambda, float alpha)
+    Eigen::Matrix3f ComputeFirstPiolaKirchhoff(const Eigen::Matrix3f& F, float J, float mu, float lambda)
     {
-        // dE/dx = dE/dF * dF/dx
-        // Calculate ∂E/∂F (First Piola-Kirchhoff Stress Tensor, P)
-        // P = ∂E/∂F = mu * F + lambda * (J - alpha) * J * F^-T
-        // cof(F) = J * F^-T
+        // P = μF + (λ·ln(J) − μ)/J · cof(F)
+        float logJ = std::log(J);
+        float scalar = (lambda * logJ - mu) / J;
 
         Eigen::Matrix3f cofF;
         cofF << (F(1,1)*F(2,2) - F(1,2)*F(2,1)),
@@ -80,61 +77,46 @@ namespace NeoHookeanMath
                 -(F(0,0)*F(1,2) - F(0,2)*F(1,0)),
                 (F(0,0)*F(1,1) - F(0,1)*F(1,0));
 
-        return mu * F + lambda * (J - alpha) * cofF;
+        return mu * F + scalar * cofF;
     }
 
     //================================//
     // Reference: Smith, de Goes, Kim 2018
     // "Analytic Eigensystems for Isotropic Distortion Energies"
-    HessianDecomposition ComputeEnergyHessian(const Eigen::Vector3f& sigma, float J, float mu, float lambda, float alpha)
+    HessianDecomposition ComputeEnergyHessian(const Eigen::Vector3f& sigma, float J, float mu, float lambda)
     {
         HessianDecomposition result{};
 
         const float s0 = sigma(0), s1 = sigma(1), s2 = sigma(2);
-        float commonFactor = (J - alpha);
 
-        // if f = vec(F), F in R^3x3 then ∂2Ψ/∂f2 in R^9x9. We have 9 eigenvalues.
-        // We analyze the F space hessian NOT THE VERTEX-SPACE (12 eigenvalues).
+        // Ψ = (μ/2)(I₁−3) − μ·ln(J) + (λ/2)(ln J)²
+        // ∂Ψ/∂σᵢ = μσᵢ + (λ·ln(J)−μ)/σᵢ  →  λ_twist_{ab} = (aₐ+a_b)/(σₐ+σ_b) = μ + σₖ·dΨ/dJ
+        //                                      λ_flip_{ab}  = (aₐ−a_b)/(σₐ−σ_b) = μ − σₖ·dΨ/dJ
 
-        // The paper gives the eigenvalues decomposition, for ANY isotropic 3D energy.
-        // We therefore have:
-        // λ_twist_i = 2/(σⱼ+σₖ) · ∂Ψ/∂I₁  +  2 · ∂Ψ/∂I₂  +  σᵢ · ∂Ψ/∂I₃
-        // λ_flip_i  =                        2 · ∂Ψ/∂I₂  −  σᵢ · ∂Ψ/∂I₃
+        float logJ    = std::log(J);
+        float dPhi_dJ = (lambda * logJ - mu) / J;
 
-        // In Neo Hookean (3D), we have:
-        // Ψ = (μ/2)(I2 − 3) + (λ/2)(J − α)²
-        // ∂Ψ/∂I₁ = 0
-        // ∂Ψ/∂I₂ = μ/2
-        // ∂Ψ/∂I₃ = λ(J − α)
+        result.eigenValues[3] = mu + dPhi_dJ * s2;
+        result.eigenValues[4] = mu + dPhi_dJ * s1;
+        result.eigenValues[5] = mu + dPhi_dJ * s0;
 
-        // The 6 twist and flip eigenvalues are closed form. The 3 scaling
-        // require a small 3x3 eigenproblem solve.
+        result.eigenValues[6] = mu - dPhi_dJ * s2;
+        result.eigenValues[7] = mu - dPhi_dJ * s1;
+        result.eigenValues[8] = mu - dPhi_dJ * s0;
 
-        result.eigenValues[3] = mu + lambda * commonFactor * s2;
-        result.eigenValues[6] = mu - lambda * commonFactor * s2;
-
-        result.eigenValues[4] = mu + lambda * commonFactor * s1;
-        result.eigenValues[7] = mu - lambda * commonFactor * s1;
-
-        result.eigenValues[5] = mu + lambda * commonFactor * s0;
-        result.eigenValues[8] = mu - lambda * commonFactor * s0;
-
-        // Small Eigenproblem from appendix D "SCALING MODE MATRIX"
-        // a_ij = σₖ(∂Ψ/∂I₃) + (∂²Ψ/∂I₁²) + 4σⱼσᵢ(∂²Ψ/∂I₂²) + σₖI₃(∂²Ψ/∂I₃²) + 2(I1 - σₖ)(∂²Ψ/∂I₁∂I₂) + 2σₖ(I2 - σₖ^2)(∂²Ψ/∂I₂∂I₃) + σₖ(I1 - σₖ)(∂²Ψ/∂I₁∂I₃)
-        // a_ii = 2(∂Ψ/∂I₂) + (∂²Ψ/∂I₁²) + 4σᵢ^2(∂²Ψ/∂I₂²) + σⱼ^2σₖ^2(∂²Ψ/∂I₃²) + 4σᵢ(∂²Ψ/∂I₁∂I₂) + 4I₃(∂²Ψ/∂I₂∂I₃) + 2(I₃/σᵢ)(∂²Ψ/∂I₁∂I₃)
-        // σᵢσⱼ = I₃/σₖ
-        // ∂Ψ/∂I₁ = 0, ∂Ψ/∂I₂ = μ/2, ∂Ψ/∂I₃ = λ(J − α)
-        // ∂²Ψ/∂I₁² = 0, ∂²Ψ/∂I₂² = 0, ∂²Ψ/∂I₃² = λ, ∂²Ψ/∂I₁∂I₂ = 0, ∂²Ψ/∂I₁∂I₃ = 0, ∂²Ψ/∂I₂∂I₃ = 0
+        // Scaling matrix: ∂²Ψ/∂σᵢ∂σⱼ (derived from ∂Ψ/∂σᵢ = μσᵢ + (λ·ln(J)−μ)/σᵢ)
+        // a_ii = μ + (μ + λ(1 − ln J)) / σᵢ²
+        // a_ij = λσₖ / J   (i≠j, k = remaining index)
+        float diagExtra = mu + lambda * (1.0f - logJ);
 
         Eigen::Matrix3f a;
-        a(0,0) = mu + lambda * (s1*s2) * (s1*s2);
-        a(1,1) = mu + lambda * (s0*s2) * (s0*s2);
-        a(2,2) = mu + lambda * (s0*s1) * (s0*s1);
+        a(0,0) = mu + diagExtra / (s0 * s0);
+        a(1,1) = mu + diagExtra / (s1 * s1);
+        a(2,2) = mu + diagExtra / (s2 * s2);
 
-        float twoJma = 2.f * J - alpha;
-        a(0,1) = a(1,0) = lambda * s2 * twoJma;
-        a(0,2) = a(2,0) = lambda * s1 * twoJma;
-        a(1,2) = a(2,1) = lambda * s0 * twoJma;
+        a(0,1) = a(1,0) = lambda * s2 / J;
+        a(0,2) = a(2,0) = lambda * s1 / J;
+        a(1,2) = a(2,1) = lambda * s0 / J;
 
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> es(a);
         Eigen::Vector3f scalingEigenValues = es.eigenvalues();

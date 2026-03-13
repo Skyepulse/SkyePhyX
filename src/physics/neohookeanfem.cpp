@@ -9,7 +9,6 @@ NeoHookeanFEM::NeoHookeanFEM(Solver* solver,
 {
     lameMu = youngsModulus / (2.f * (1.f + poissonRatio));
     lameLambda = youngsModulus * poissonRatio / ((1.f + poissonRatio) * (1.f - 2.f * poissonRatio));
-    a = 1.0f + lameMu / lameLambda;
 
     Eigen::Vector3f p0 = body0->transform.GetPosition();
     Eigen::Vector3f p1 = body1->transform.GetPosition();
@@ -48,7 +47,7 @@ void NeoHookeanFEM::ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectio
     Eigen::Matrix3f F = DeformationGradient(p0, p1, p2, p3, DmInv);
     float J = F.determinant();
 
-    cachedEnergy = restVolume * ComputeEnergyDensity(F, J, lameMu, lameLambda, a);
+    cachedEnergy = restVolume * ComputeEnergyDensity(F, J, lameMu, lameLambda);
 
     Eigen::Vector3f gradN = Eigen::Vector3f::Zero();
     if (mesh == body0) gradN = gradN0;
@@ -63,14 +62,14 @@ void NeoHookeanFEM::ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectio
     }
 
     // grad = P * V0 * gradN
-    Eigen::Matrix3f P = ComputeFirstPiolaKirchhoff(F, J, lameMu, lameLambda, a);
+    Eigen::Matrix3f P = ComputeFirstPiolaKirchhoff(F, J, lameMu, lameLambda);
     Eigen::Vector3f gradient = P * gradN * restVolume;
 
     grad.setZero(); // NO rotational component.
     grad.head<3>() = gradient;
 
     SVDDecomposition SVD = svd(F);
-    HessianDecomposition hessDecomp = ComputeEnergyHessian(SVD.S, J, lameMu, lameLambda, a);
+    HessianDecomposition hessDecomp = ComputeEnergyHessian(SVD.S, J, lameMu, lameLambda);
 
     float projectedEigenValues[9];
     for (int i = 0; i < 9; ++i)

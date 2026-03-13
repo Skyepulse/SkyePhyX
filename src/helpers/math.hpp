@@ -127,13 +127,13 @@ namespace NeoHookeanMath
     Eigen::Matrix3f DeformationGradient(const Eigen::Vector3f& p0, const Eigen::Vector3f& p1, const Eigen::Vector3f& p2, const Eigen::Vector3f& p3, const Eigen::Matrix3f& DmInv);
 
     //================================//
-    float ComputeEnergyDensity(const Eigen::Matrix3f& F, float J, float mu, float lambda, float alpha);
+    float ComputeEnergyDensity(const Eigen::Matrix3f& F, float J, float mu, float lambda);
 
     //================================//
-    Eigen::Matrix3f ComputeFirstPiolaKirchhoff(const Eigen::Matrix3f& F, float J, float mu, float lambda, float alpha);
+    Eigen::Matrix3f ComputeFirstPiolaKirchhoff(const Eigen::Matrix3f& F, float J, float mu, float lambda);
 
     //================================//
-    HessianDecomposition ComputeEnergyHessian(const Eigen::Vector3f& sigma, float J, float mu, float lambda, float alpha);
+    HessianDecomposition ComputeEnergyHessian(const Eigen::Vector3f& sigma, float J, float mu, float lambda);
 
     //================================//
     void ProjectEigenvalues(float* eigenvalues, int count, EigenProjectionMode mode, float trustRegionRho, float threshold = 0.01f, float epsilon = 1e-6f);

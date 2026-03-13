@@ -60,7 +60,6 @@ struct NeoHookeanFEM: Energy
 
     float lameMu;
     float lameLambda;
-    float a;
 
     float poissonRatio;
     float youngsModulus;
