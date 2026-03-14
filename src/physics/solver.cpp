@@ -262,13 +262,12 @@ void Solver::Step()
     forcePtrs.reserve(solverForces.size());
     for (auto& f : solverForces) forcePtrs.push_back(f.get());
 
-    // 2. Forces Warmstartin
+    // 2. Forces Warmstarting
     this->lineData.clear();
     this->debugPointData.clear();
     std::vector<Force*> toRemove;
     for (Force* force : forcePtrs)
     {
-
         if (!force->Initialize())
         {
             toRemove.push_back(force);
@@ -473,9 +472,12 @@ void Solver::Step()
 
                 if (std::abs(force->constraintPoints[i].lambda) >= force->constraintPoints[i].fracture)
                 {
-                    // TODO FIX: find a way to disable force while fixing propagation of stiffnesses.
-                    // force->Disable();
-                    // break;
+                    for (Mesh* body : force->linkedBodies)
+                        for (Force* otherForce : body->forces)
+                            if (otherForce->isManifold)
+                                otherForce->ResetValues();
+                    force->Disable();
+                    break;
                 }
 
                 if (force->constraintPoints[i].lambda > force->constraintPoints[i].fminMagnitude

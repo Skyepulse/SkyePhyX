@@ -232,14 +232,21 @@ static void JointPlayground(Solver* solver, Camera* camera, const LevelParameter
         spawnPos.x() += commonScale.x();
     }
 
-    // bridge, same but last body has anchor into world
+    // bridge with two ropes per link
     startAnchor = Eigen::Vector3f(-10.f, 5.f, -5.f);
     commonScale = Eigen::Vector3f(2.f, 0.5f, 3.f);
     numLinks = 12;
+    float bridgeSpacing = 1.0f;
     lastBody = nullptr;
     spawnPos = Eigen::Vector3f(startAnchor.x() + commonScale.x() / 2.f, startAnchor.y(), startAnchor.z());
 
-    std::vector<int> breakeableJoints = {6};
+    float zEdge      = 0.5f;
+    float zEdgeWorld = 0.5f * commonScale.z();
+
+    // left wall anchors: one bridgeSpacing to the left of block[0]'s left face
+    Eigen::Vector3f leftAnchorWorld = startAnchor - Eigen::Vector3f(bridgeSpacing, 0.f, 0.f);
+
+    std::vector<int> breakableRopes = {6};
     for (int i = 0; i < numLinks; i++)
     {
         Mesh* block = solver->AddBody(
@@ -253,28 +260,47 @@ static void JointPlayground(Solver* solver, Camera* camera, const LevelParameter
         );
         block->name = "BridgeLink_" + std::to_string(i);
 
-        Vector6f fractures = Vector6f::Constant(INFINITY);
-        if (std::find(breakeableJoints.begin(), breakeableJoints.end(), i) != breakeableJoints.end())
+        bool breakable = std::find(breakableRopes.begin(), breakableRopes.end(), i) != breakableRopes.end();
+        float fracture = breakable ? 2000.f : INFINITY;
+
+        for (int side = 0; side < 2; side++)
         {
-            fractures.head<3>() = Eigen::Vector3f(5000.f, 5000.f, 5000.f);
-            fractures.tail<3>() = Eigen::Vector3f(500.f, 500.f, 500.f);
+            float zSign = (side == 0) ? 1.f : -1.f;
+            Eigen::Vector3f rA_w, rB_w;
+            Mesh* ropeBodyA = lastBody;
+            if (lastBody)
+            {
+                rA_w = Eigen::Vector3f(0.5f, 0.f, zSign * zEdge);
+                rB_w = Eigen::Vector3f(-0.5f, 0.f, zSign * zEdge);
+            }
+            else
+            {
+                rA_w = leftAnchorWorld + Eigen::Vector3f(0.f, 0.f, zSign * zEdgeWorld);
+                rB_w = Eigen::Vector3f(-0.5f, 0.f, zSign * zEdge);
+            }
+            Spring* rope = new Spring(solver, ropeBodyA, rA_w, block, rB_w, 5000.0f, -1.f, false);
+            rope->constraintPoints[0].fracture = fracture;
+            solver->AddForce(std::unique_ptr<Force>(rope));
         }
 
-        Force* joint = new Joint(solver, lastBody, lastBody ? relRight : startAnchor, block, relLeft, pendulumAnchors, fractures);
-        solver->AddForce(std::unique_ptr<Force>(joint));
         lastBody = block;
-        spawnPos.x() += commonScale.x();
+        spawnPos.x() += commonScale.x() + bridgeSpacing;
     }
 
-    // anchor last block to world
-    Eigen::Vector3f endAnchor = startAnchor + Eigen::Vector3f(commonScale.x() * numLinks, 0.f, 0.f);
-    Force* lastJoint = new Joint(solver, nullptr, endAnchor, lastBody, relRight, pendulumAnchors);
-    solver->AddForce(std::unique_ptr<Force>(lastJoint));
+    // right wall anchors: one bridgeSpacing to the right of block[11]'s right face
+    Eigen::Vector3f endAnchor = startAnchor + Eigen::Vector3f(commonScale.x() * numLinks + (numLinks - 1) * bridgeSpacing, 0.f, 0.f);
+    Eigen::Vector3f rightAnchorWorld = endAnchor + Eigen::Vector3f(bridgeSpacing, 0.f, 0.f);
+    for (int side = 0; side < 2; side++)
+    {
+        float zSign = (side == 0) ? 1.f : -1.f;
+        Spring* rope = new Spring(solver, nullptr, rightAnchorWorld + Eigen::Vector3f(0.f, 0.f, zSign * zEdgeWorld), lastBody, Eigen::Vector3f(0.5f, 0.f, zSign * zEdge), INFINITY, -1.f, false);
+        solver->AddForce(std::unique_ptr<Force>(rope));
+    }
 
     Eigen::Vector3f bridgeCenter = (startAnchor + endAnchor) * 0.5f;
     float bridgeZ = startAnchor.z();
     float bridgeCenterX = bridgeCenter.x();
-    Eigen::Vector3f blockScale = Eigen::Vector3f(1.5f, 1.5f, 1.5f);
+    Eigen::Vector3f blockScale = Eigen::Vector3f(3.0f, 3.0f, 3.0f);
 
     // Falling weights to break bridge
     solver->AddBody(

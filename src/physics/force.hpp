@@ -41,6 +41,9 @@ struct Force
 
     bool disabled = false;
 
+    bool forceDisable = false;
+    int numFramesDisable = 0;
+
     // HELPERS //
     virtual bool Initialize() = 0;
     virtual void ComputeConstraints(float alpha) = 0;
@@ -54,6 +57,17 @@ struct Force
     void Disable()
     {
         disabled = true;
+        for (int i = 0; i < numConstraints(); ++i)
+        {
+            constraintPoints[i].lambda = 0.f;
+            constraintPoints[i].penalty = 0.f;
+            constraintPoints[i].C = 0.f;
+        }
+    }
+
+    //================================//
+    void ResetValues()
+    {
         for (int i = 0; i < numConstraints(); ++i)
         {
             constraintPoints[i].lambda = 0.f;

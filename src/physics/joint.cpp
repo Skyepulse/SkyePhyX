@@ -69,6 +69,16 @@ Joint::Joint(
 bool Joint::Initialize()
 {
     if (disabled) return false;
+
+    if (forceDisable)
+    {
+        if (numFramesDisable <= 0)
+        {
+            return false;
+        }
+        
+        numFramesDisable--;
+    }
     
     Eigen::Vector3f worldA = bodyA ? bodyA->transform.TransformPoint(rA) : rA;
     Eigen::Vector3f worldB = bodyB->transform.TransformPoint(rB);
