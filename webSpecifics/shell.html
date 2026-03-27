@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkyePhyX — AVBD Physics Simulator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #07070f;
+      color: #dde;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ── Simulator ── */
+    #sim-section {
+      position: relative;
+      width: 100%;
+      height: 82vh;
+      min-height: 400px;
+      background: #000;
+      flex-shrink: 0;
+    }
+
+    #canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(4, 4, 14, 0.92);
+      gap: 14px;
+      pointer-events: none;
+    }
+
+    #loading-title {
+      font-size: 1.3rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: #9bc4ff;
+    }
+
+    #loading-status {
+      font-size: 0.9rem;
+      color: #667;
+      min-height: 1.2em;
+    }
+
+    #progress-track {
+      width: 260px;
+      height: 6px;
+      background: #1a1a2e;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2d6ecc, #5ba8ff);
+      border-radius: 3px;
+      transition: width 0.15s ease;
+    }
+
+    /* ── Instructions ── */
+    #instructions {
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0rem 2rem 2rem;
+    }
+
+    #instructions h2 {
+      font-size: 1.5rem;
+      color: #5ba8ff;
+      margin-bottom: 0.6rem;
+    }
+
+    #instructions .subtitle {
+      font-size: 0.95rem;
+      color: #778;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    #instructions h3 {
+      font-size: 1rem;
+      color: #7ac8cc;
+      margin: 1.8rem 0 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.82rem;
+    }
+
+    #instructions ul {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 0.4rem 1.5rem;
+    }
+
+    #instructions ul li {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      color: #bbc;
+      line-height: 1.5;
+    }
+
+    .key {
+      display: inline-block;
+      background: #111826;
+      border: 1px solid #2a3a55;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-family: monospace;
+      font-size: 0.82rem;
+      color: #9fc;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #1a1a2e;
+      margin: 2.5rem 0 0;
+    }
+
+    .footnote {
+      font-size: 0.78rem;
+      color: #445;
+      padding-top: 1.2rem;
+    }
+
+    /* ── Report ── */
+    #report-section {
+      width: 100%;
+      background: #05050d;
+      padding-bottom: 2rem;
+      flex-shrink: 0;
+    }
+
+    #report-section h2 {
+      text-align: center;
+      padding: 2.5rem 0 1rem;
+      font-size: 1.3rem;
+      color: #5ba8ff;
+    }
+
+    #pdf-viewer {
+      display: block;
+      width: min(100%, 960px);
+      height: 90vh;
+      min-height: 500px;
+      margin: 0 auto;
+      border: 1px solid #1a1a2e;
+      border-radius: 4px;
+    }
+
+    @media (max-width: 600px) {
+      #sim-section { height: 60vh; }
+      #instructions { padding: 0rem 1rem 1.5rem; }
+      #instructions ul { grid-template-columns: 1fr; }
+      #pdf-viewer { height: 70vh; }
+    }
+  </style>
+</head>
+<body>
+
+<section id="sim-section">
+  <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+  <div id="loading-overlay">
+    <div id="loading-title">SkyePhyX</div>
+    <div id="progress-track"><div id="progress-fill"></div></div>
+    <div id="loading-status">Initializing…</div>
+  </div>
+</section>
+
+<section id="instructions">
+  <h2>SkyePhyX — Augmented Vertex Block Descent</h2>
+  <p class="subtitle">
+    Real-time constraint-based physics running in-browser via WebGPU.<br>
+    Implements <strong>AVBD</strong> (Giles, Diaz, Yuksel — SIGGRAPH 2025) on top of
+    <strong>VBD</strong> (Chen, Liu, Yang, Yuksel — SIGGRAPH 2024).
+    Rigid bodies, soft bodies (Neo-Hookean / StVK FEM), contacts, friction, and joints.
+  </p>
+
+  <h3>Camera</h3>
+  <ul>
+    <li><span class="key">LMB</span> drag — orbit</li>
+    <li><span class="key">W</span> / <span class="key">Z</span> — forward</li>
+    <li><span class="key">S</span> — backward</li>
+    <li><span class="key">A</span> / <span class="key">Q</span> — strafe left</li>
+    <li><span class="key">D</span> — strafe right</li>
+    <li><span class="key">↑</span> / <span class="key">↓</span> — up / down</li>
+    <li><span class="key">←</span> / <span class="key">→</span> — rotate</li>
+    <li><span class="key">Shift</span> — 6× speed</li>
+  </ul>
+
+  <h3>Simulation</h3>
+  <ul>
+    <li><span class="key">P</span> — pause / resume</li>
+    <li><span class="key">N</span> — single step (while paused)</li>
+    <li><span class="key">R</span> — restart level</li>
+    <li><span class="key">B</span> — spawn random rigid box</li>
+  </ul>
+
+  <h3>UI Panel</h3>
+  <ul>
+    <li>Use the ImGui overlay to switch levels and tune Young's modulus, Poisson's ratio, and time step in real time.</li>
+  </ul>
+
+  <hr class="divider">
+  <p class="footnote">
+    Built with WebGPU (emdawnwebgpu), Emscripten, Eigen 3.4, and Dear ImGui 1.92.
+  </p>
+</section>
+
+<section id="report-section">
+  <h2>Project Report</h2>
+  <iframe id="pdf-viewer" src="report.pdf" title="Project Report"></iframe>
+</section>
+
+{{{ SCRIPT }}}
+<script>
+  var progressFill   = document.getElementById('progress-fill');
+  var loadingStatus  = document.getElementById('loading-status');
+  var loadingOverlay = document.getElementById('loading-overlay');
+  var moduleBootStarted = false;
+
+  function reportLoadFailure(err) {
+    loadingStatus.textContent = 'Failed to load: ' + (err && err.message ? err.message : err);
+    console.error('[SkyePhyX]', err);
+  }
+
+  function startSkyePhyX() {
+    if (moduleBootStarted) return;
+
+    var factory = globalThis.createSkyePhyXModule;
+    if (typeof factory !== 'function') {
+      reportLoadFailure(new Error('SkyePhyX.js loaded, but createSkyePhyXModule is not available.'));
+      return;
+    }
+
+    moduleBootStarted = true;
+
+    factory({
+      canvas: document.getElementById('canvas'),
+
+      onRuntimeInitialized: function() {
+        loadingOverlay.style.display = 'none';
+      },
+
+      setStatus: function(text) {
+        if (!text) return;
+        loadingStatus.textContent = text;
+        var m = text.match(/(\d+)\/(\d+)/);
+        if (m) {
+          progressFill.style.width = Math.round(100 * parseInt(m[1]) / parseInt(m[2])) + '%';
+        }
+      },
+
+      monitorRunDependencies: function(left) {
+        if (left === 0) loadingOverlay.style.display = 'none';
+      }
+
+    }).catch(reportLoadFailure);
+  }
+
+  var emscriptenScript = document.currentScript.previousElementSibling;
+  if (typeof globalThis.createSkyePhyXModule === 'function') {
+    startSkyePhyX();
+  } else if (emscriptenScript && emscriptenScript.tagName === 'SCRIPT') {
+    emscriptenScript.addEventListener('load', startSkyePhyX, { once: true });
+    emscriptenScript.addEventListener('error', function() {
+      reportLoadFailure(new Error('Failed to load SkyePhyX.js.'));
+    }, { once: true });
+  } else {
+    startSkyePhyX();
+  }
+</script>
+
+</body>
+</html>

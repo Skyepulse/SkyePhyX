@@ -56,11 +56,14 @@ private:
     bool restartKeyWasPressed = false;
 
     bool randomBoxSpawnedPressed = false;
+    bool mainLoopStarted = false;
+    float physicsAccumulator = 0.0f;
 
     //================================//
     void ProcessEvents(float deltaTime);
     void UpdateCurrentTime();
     void AccumulateFrameRate();
+    void TickFrame();
 
     //================================//
     void SpawnRandomBox();

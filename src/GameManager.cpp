@@ -47,81 +47,108 @@ GameManager::~GameManager()
 }
 
 //================================//
-void GameManager::RunMainLoop()
+void GameManager::TickFrame()
 {
-    if (!this->correctlyInitialized)
+    if (!this->correctlyInitialized || glfwWindowShouldClose(this->window.get()))
+    {
+#ifdef __EMSCRIPTEN__
+        emscripten_cancel_main_loop();
+#endif
         return;
-
-    std::cout << "[INFO][GameManager] Entering main loop...\n";   
+    }
 
     const int MAX_PHYSICS_STEPS = 5;
-    float accumulator = 0.f;
+    this->UpdateCurrentTime();
+    this->ProcessEvents(this->deltaTime);
+
+    this->physicsAccumulator += this->deltaTime;
+
+    int steps = 0;
+    while (this->physicsAccumulator >= this->solver->stepValue && steps < MAX_PHYSICS_STEPS)
+    {
+        if (!this->paused || this->nextPass)
+        {
+            this->solver->Step();
+            this->nextPass = false;
+        }
+        this->physicsAccumulator -= this->solver->stepValue;
+        steps++;
+    }
+
+    if (steps == MAX_PHYSICS_STEPS)
+        this->physicsAccumulator = 0.f;
+
+    using Clock = std::chrono::high_resolution_clock;
+    RenderTimings& rt = this->renderEngine->renderTimings;
+
+    auto t0 = Clock::now();
+    this->renderEngine->AcquireSwapchainTexture();
+
+    auto t1 = Clock::now();
+    this->renderEngine->SetSolverStepTime(this->solver->averageStepTime);
+    this->renderEngine->UpdateInstanceBuffer(this->solver->bodyPtrs);
+
+    auto t2 = Clock::now();
+    this->renderEngine->UpdateLineBuffer(this->solver->lineData);
+    this->renderEngine->UpdateSoftBodySurfaceBuffer(this->solver->softBodySurfaceData);
+
+    auto t3 = Clock::now();
+    this->renderEngine->UpdateDebugPointBuffer(this->solver->debugPointData);
+
+    auto t4 = Clock::now();
+    this->renderEngine->Render(static_cast<void*>(&this->renderInfo));
+
+    auto t5 = Clock::now();
+#ifndef __EMSCRIPTEN__
+    this->wgpuBundle->GetSurface().Present();
+#endif
+    this->wgpuBundle->GetInstance().ProcessEvents();
+
+    auto t6 = Clock::now();
+
+    auto ms = [](auto start, auto end) {
+        return std::chrono::duration<float, std::milli>(end - start).count();
+    };
+
+    rt.acquireSwapchain.push(ms(t0, t1));
+    rt.updateInstances.push(ms(t1, t2));
+    rt.updateLines.push(ms(t2, t3));
+    rt.updateDebug.push(ms(t3, t4));
+    rt.render.push(ms(t4, t5));
+    rt.present.push(ms(t5, t6));
+    rt.totalFrame.push(ms(t0, t6));
+
+    this->AccumulateFrameRate();
+}
+
+//================================//
+void GameManager::RunMainLoop()
+{
+    if (!this->correctlyInitialized || this->mainLoopStarted)
+        return;
+
+    this->mainLoopStarted = true;
+    std::cout << "[INFO][GameManager] Entering main loop...\n";
 
     this->solver->Start();
     ChangeLevel(0);
 
+#ifdef __EMSCRIPTEN__
+    emscripten_set_main_loop_arg(
+        [](void* userData)
+        {
+            static_cast<GameManager*>(userData)->TickFrame();
+        },
+        this,
+        0,
+        true
+    );
+#else
     while (!glfwWindowShouldClose(this->window.get()))
     {
-        this->UpdateCurrentTime();
-        this->ProcessEvents(this->deltaTime);
-
-        accumulator += this->deltaTime;
-
-        int steps = 0;
-        while (accumulator >= this->solver->stepValue && steps < MAX_PHYSICS_STEPS)
-        {
-            if (!this->paused || this->nextPass)
-            {
-                this->solver->Step();
-                this->nextPass = false;
-            }
-            accumulator -= this->solver->stepValue;
-            steps++;
-        }
-
-        if (steps == MAX_PHYSICS_STEPS)
-            accumulator = 0.f;
-
-        using Clock = std::chrono::high_resolution_clock;
-        RenderTimings& rt = this->renderEngine->renderTimings;
-
-        auto t0 = Clock::now();
-        this->renderEngine->AcquireSwapchainTexture();
-
-        auto t1 = Clock::now();
-        this->renderEngine->SetSolverStepTime(this->solver->averageStepTime);
-        this->renderEngine->UpdateInstanceBuffer(this->solver->bodyPtrs);
-
-        auto t2 = Clock::now();
-        this->renderEngine->UpdateLineBuffer(this->solver->lineData);
-        this->renderEngine->UpdateSoftBodySurfaceBuffer(this->solver->softBodySurfaceData);
-
-        auto t3 = Clock::now();
-        this->renderEngine->UpdateDebugPointBuffer(this->solver->debugPointData);
-
-        auto t4 = Clock::now();
-        this->renderEngine->Render(static_cast<void*>(&this->renderInfo));
-
-        auto t5 = Clock::now();
-        this->wgpuBundle->GetSurface().Present();
-        this->wgpuBundle->GetInstance().ProcessEvents();
-
-        auto t6 = Clock::now();
-
-        auto ms = [](auto start, auto end) {
-            return std::chrono::duration<float, std::milli>(end - start).count();
-        };
-
-        rt.acquireSwapchain.push(ms(t0, t1));
-        rt.updateInstances.push(ms(t1, t2));
-        rt.updateLines.push(ms(t2, t3));
-        rt.updateDebug.push(ms(t3, t4));
-        rt.render.push(ms(t4, t5));
-        rt.present.push(ms(t5, t6));
-        rt.totalFrame.push(ms(t0, t6));
-
-        this->AccumulateFrameRate();
+        this->TickFrame();
     }
+#endif
 }
 
 //================================//

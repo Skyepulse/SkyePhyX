@@ -106,6 +106,7 @@ inline Eigen::Matrix3f Cof(const Eigen::Matrix3f& F)
     cofF(2,0) =  F(0,1)*F(1,2) - F(0,2)*F(1,1);
     cofF(2,1) = -(F(0,0)*F(1,2) - F(0,2)*F(1,0));
     cofF(2,2) =  F(0,0)*F(1,1) - F(0,1)*F(1,0);
+    return cofF;
 }
 
 //================================//

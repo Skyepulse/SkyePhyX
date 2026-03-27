@@ -2,8 +2,19 @@
 #include "wgpuHelpers.hpp"
 
 #include <GLFW/glfw3.h>
-#include <vector>
 #include <iostream>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace {
+
+std::string StringViewToString(wgpu::StringView value)
+{
+    return std::string(static_cast<std::string_view>(value));
+}
+
+}  // namespace
 
 //================================//
 WgpuBundle::WgpuBundle(WindowFormat windowFormat) : window(windowFormat.window), currentWidth(windowFormat.width), currentHeight(windowFormat.height)
@@ -12,7 +23,16 @@ WgpuBundle::WgpuBundle(WindowFormat windowFormat) : window(windowFormat.window),
 
     if (this->window != nullptr)
     {
+#ifdef __EMSCRIPTEN__
+        wgpu::EmscriptenSurfaceSourceCanvasHTMLSelector canvasDesc{};
+        canvasDesc.selector = "#canvas";
+
+        wgpu::SurfaceDescriptor surfaceDesc{};
+        surfaceDesc.nextInChain = &canvasDesc;
+        this->surface = this->instance.CreateSurface(&surfaceDesc);
+#else
         this->surface = wgpu::glfw::CreateSurfaceForWindow(this->instance, window);
+#endif
 
         // Callback on window resize
         glfwSetWindowUserPointer(window, this);
@@ -62,6 +82,7 @@ void WgpuBundle::InitializeInstance()
     // Instance required features
     const wgpu::InstanceFeatureName kTimeWaitAny = wgpu::InstanceFeatureName::TimedWaitAny;
     std::vector<wgpu::InstanceFeatureName> requiredFeatures = { kTimeWaitAny };
+
     if (wgpuCreateInstance(this->instance, requiredFeatures) < 0)
         throw std::runtime_error("Failed to create WebGPU instance.");
 
@@ -81,7 +102,7 @@ void WgpuBundle::InitializeInstance()
     deviceDesc.SetUncapturedErrorCallback(
         [](const wgpu::Device&, wgpu::ErrorType errorType, wgpu::StringView message)
         {
-            std::cout << "[wgpuDevice] Uncaptured error: " << message << std::endl;
+            std::cout << "[wgpuDevice] Uncaptured error: " << StringViewToString(message) << std::endl;
         }
     );
     deviceDesc.SetDeviceLostCallback(
@@ -89,7 +110,7 @@ void WgpuBundle::InitializeInstance()
         [](const wgpu::Device& device, wgpu::DeviceLostReason reason, wgpu::StringView message)
         {
             std::cerr << "[wgpuDevice] Device lost! Reason: " << static_cast<int>(reason) 
-                    << ", Message: " << std::string(message.data, message.length) << std::endl;
+                    << ", Message: " << StringViewToString(message) << std::endl;
         }
     );
 
@@ -114,8 +135,8 @@ void WgpuBundle::InitializeInstance()
 
     wgpu::AdapterInfo info;
     adapter.GetInfo(&info);
-    std::cout << "[wgpuBundle][Init] Using adapter: " << info.description << std::endl;
-    std::cout << "[wgpuBundle][Init] Using device: " << info.device << std::endl;
+    std::cout << "[wgpuBundle][Init] Using adapter: " << StringViewToString(info.description) << std::endl;
+    std::cout << "[wgpuBundle][Init] Using device: " << StringViewToString(info.device) << std::endl;
     std::cout << "[wgpuBundle][Init] Device limits: " << std::endl;
     std::cout << "  - Max buffer size: " << this->limits.maxBufferSize << " GB: " << static_cast<double>(this->limits.maxBufferSize) / (1024 * 1024 * 1024) << std::endl;
     std::cout << "  - Max storage buffer binding size: " << this->limits.maxStorageBufferBindingSize <<  " GB: " << static_cast<double>(this->limits.maxStorageBufferBindingSize) / (1024 * 1024 * 1024) << std::endl;

@@ -61,10 +61,8 @@ int wgpuCreateInstance(wgpu::Instance& instance, const std::vector<wgpu::Instanc
 //================================//
 int wgpuRequestAdapter(const wgpu::Instance& instance, wgpu::Adapter& adapter, wgpu::RequestAdapterOptions const* options)
 {
-    bool requestCompleted = false;
-    
     wgpu::Future f1 = instance.RequestAdapter(
-        nullptr,
+        options,
         wgpu::CallbackMode::WaitAnyOnly,
         [](wgpu::RequestAdapterStatus status, wgpu::Adapter a, wgpu::StringView message, wgpu::Adapter* userdata)
         {
@@ -83,8 +81,6 @@ int wgpuRequestAdapter(const wgpu::Instance& instance, wgpu::Adapter& adapter, w
 //================================//
 int wgpuCreateDevice(const wgpu::Instance instance, const wgpu::Adapter& adapter, wgpu::Device& device, wgpu::DeviceDescriptor const* descriptor)
 {
-    bool requestCompleted = false;
-
     wgpu::Future f2 = adapter.RequestDevice(
         descriptor,
         wgpu::CallbackMode::WaitAnyOnly,

@@ -2,7 +2,9 @@
 #define WGPU_BUNDLE_HPP
 
 #include <webgpu/webgpu_cpp.h>
+#ifndef __EMSCRIPTEN__
 #include <dawn/webgpu_cpp_print.h>
+#endif
 #include <webgpu/webgpu_glfw.h>
 
 //================================//

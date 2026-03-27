@@ -21,7 +21,7 @@
 struct Energy
 {
     Energy(Solver* solver, std::vector<Mesh*> linkedBodies);
-    ~Energy();
+    virtual ~Energy();
 
     int solverIndex = -1;
 

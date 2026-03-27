@@ -137,17 +137,24 @@ if(EMSCRIPTEN)
   set(DCMAKE_CXX_SCAN_FOR_MODULES OFF CACHE BOOL "" FORCE)
   set_target_properties(SkyePhyX PROPERTIES SUFFIX ".html")
   target_link_libraries(SkyePhyX PRIVATE emdawnwebgpu_cpp webgpu_glfw)
-  target_link_options(SkyePhyX PRIVATE 
-      "-sINITIAL_MEMORY=64MB" 
-      "-sALLOW_MEMORY_GROWTH=1" 
-      "-sASYNCIFY=1" 
-      "-sUSE_GLFW=3" 
+  target_link_options(SkyePhyX PRIVATE
+      "-sINITIAL_MEMORY=64MB"
+      "-sALLOW_MEMORY_GROWTH=1"
+      "-sASYNCIFY=1"
+      "-sASYNCIFY_STACK_SIZE=16384"
+      "-sUSE_GLFW=3"
       "--preload-file=${CMAKE_SOURCE_DIR}/Shaders@/Shaders"
       "--preload-file=${CMAKE_SOURCE_DIR}/web-data@/data"
-      "--shell-file=${CMAKE_SOURCE_DIR}/shell.html"
+      "--shell-file=${CMAKE_SOURCE_DIR}/webSpecifics/shell.html"
       "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
       "-sMODULARIZE=1"
-      "-sEXPORT_NAME='createSkyePhyXModule'"
+      "-sEXPORT_NAME=createSkyePhyXModule"
+  )
+  add_custom_command(TARGET SkyePhyX POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy
+          ${CMAKE_SOURCE_DIR}/webSpecifics/report.pdf
+          ${CMAKE_BINARY_DIR}/report.pdf
+      COMMENT "Copying report.pdf to build output"
   )
 
 else()

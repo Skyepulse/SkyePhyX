@@ -27,7 +27,7 @@ struct ConstraintPointProperties
 struct Force
 {
     Force(Solver* solver, std::vector<Mesh*> linkedBodies, int numConstraintPoints);
-    ~Force();
+    virtual ~Force();
 
     int solverIndex = -1;
 
