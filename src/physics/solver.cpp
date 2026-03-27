@@ -465,6 +465,9 @@ void Solver::Step()
     out.predictionMs = elapsed(phaseStart);
 
     // 5. Main Iteration Loop
+    out.solveConstraintsMs = 0.0f;
+    out.solveEnergiesMs    = 0.0f;
+    out.solveLDLTMs        = 0.0f;
     phaseStart = Clock::now();
     for (int iter = 0; iter < this->numIterations; ++iter)
     {
@@ -476,6 +479,7 @@ void Solver::Step()
             Matrix6f lhs = mesh->cachedGeneralizedMass / (stepValue * stepValue);
             Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
 
+            auto cStart = Clock::now();
             for (Force* force : mesh->forces)
             {
                 force->ComputeConstraints(alpha);
@@ -502,7 +506,9 @@ void Solver::Step()
                         lhs.noalias() += G;
                 }
             }
+            out.solveConstraintsMs += elapsed(cStart);
 
+            auto eStart = Clock::now();
             for (Energy* energy : mesh->energies)
             {
                 energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
@@ -513,7 +519,9 @@ void Solver::Step()
                 rhs += grad;
                 lhs += hess;
             }
+            out.solveEnergiesMs += elapsed(eStart);
 
+            auto lStart = Clock::now();
             ldlt.compute(lhs);
             Vector6f dx = ldlt.solve(rhs);
 
@@ -526,6 +534,7 @@ void Solver::Step()
             Quaternionf dq = QuaternionFromDifference(dx_ang, -1.f);
             Quaternionf rot = mesh->transform.GetRotation();
             mesh->transform.SetRotation((dq * rot).normalized());
+            out.solveLDLTMs += elapsed(lStart);
         }
 
         // 5.2 trust region rho update
@@ -686,22 +695,28 @@ void Solver::Step()
     SolverTimings avg{};
     for (const auto& t : timingAccumulator)
     {
-        avg.broadPhaseMs     += t.broadPhaseMs;
-        avg.warmstartMs      += t.warmstartMs;
-        avg.predictionMs     += t.predictionMs;
-        avg.primalDualMs     += t.primalDualMs;
-        avg.velocityUpdateMs += t.velocityUpdateMs;
-        avg.postStabMs       += t.postStabMs;
-        avg.totalSubstepMs   += t.totalSubstepMs;
+        avg.broadPhaseMs      += t.broadPhaseMs;
+        avg.warmstartMs       += t.warmstartMs;
+        avg.predictionMs      += t.predictionMs;
+        avg.primalDualMs      += t.primalDualMs;
+        avg.solveConstraintsMs += t.solveConstraintsMs;
+        avg.solveEnergiesMs   += t.solveEnergiesMs;
+        avg.solveLDLTMs       += t.solveLDLTMs;
+        avg.velocityUpdateMs  += t.velocityUpdateMs;
+        avg.postStabMs        += t.postStabMs;
+        avg.totalSubstepMs    += t.totalSubstepMs;
     }
     float n = static_cast<float>(timingAccumulator.size());
-    this->timings.broadPhaseMs     = avg.broadPhaseMs / n;
-    this->timings.warmstartMs      = avg.warmstartMs / n;
-    this->timings.predictionMs     = avg.predictionMs / n;
-    this->timings.primalDualMs     = avg.primalDualMs / n;
-    this->timings.velocityUpdateMs = avg.velocityUpdateMs / n;
-    this->timings.postStabMs       = avg.postStabMs / n;
-    this->timings.totalSubstepMs   = avg.totalSubstepMs / n;
+    this->timings.broadPhaseMs      = avg.broadPhaseMs / n;
+    this->timings.warmstartMs       = avg.warmstartMs / n;
+    this->timings.predictionMs      = avg.predictionMs / n;
+    this->timings.primalDualMs      = avg.primalDualMs / n;
+    this->timings.solveConstraintsMs = avg.solveConstraintsMs / n;
+    this->timings.solveEnergiesMs   = avg.solveEnergiesMs / n;
+    this->timings.solveLDLTMs       = avg.solveLDLTMs / n;
+    this->timings.velocityUpdateMs  = avg.velocityUpdateMs / n;
+    this->timings.postStabMs        = avg.postStabMs / n;
+    this->timings.totalSubstepMs    = avg.totalSubstepMs / n;
 
     averageStepTime = this->timings.totalSubstepMs;
 }

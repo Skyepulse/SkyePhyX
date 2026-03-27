@@ -98,7 +98,10 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui::Text("  Broad Phase:    %6.3f ms  (%4.1f%%)", t.broadPhaseMs,     100.f * t.broadPhaseMs / solverTotal);
     ImGui::Text("  Warmstart:      %6.3f ms  (%4.1f%%)", t.warmstartMs,      100.f * t.warmstartMs / solverTotal);
     ImGui::Text("  Prediction:     %6.3f ms  (%4.1f%%)", t.predictionMs,     100.f * t.predictionMs / solverTotal);
-    ImGui::Text("  Primal+Dual:    %6.3f ms  (%4.1f%%)", t.primalDualMs,     100.f * t.primalDualMs / solverTotal);
+    ImGui::Text("  Primal+Dual:    %6.3f ms  (%4.1f%%)", t.primalDualMs,        100.f * t.primalDualMs / solverTotal);
+    ImGui::Text("    Constraints:  %6.3f ms  (%4.1f%%)", t.solveConstraintsMs,  100.f * t.solveConstraintsMs / solverTotal);
+    ImGui::Text("    Energies:     %6.3f ms  (%4.1f%%)", t.solveEnergiesMs,     100.f * t.solveEnergiesMs / solverTotal);
+    ImGui::Text("    LDLT Solve:   %6.3f ms  (%4.1f%%)", t.solveLDLTMs,         100.f * t.solveLDLTMs / solverTotal);
     ImGui::Text("  Velocity Update: %5.3f ms  (%4.1f%%)", t.velocityUpdateMs, 100.f * t.velocityUpdateMs / solverTotal);
     ImGui::Text("  Post-Stab:      %6.3f ms  (%4.1f%%)", t.postStabMs,       100.f * t.postStabMs / solverTotal);
 
@@ -116,7 +119,10 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     DrawBar("Broad",      t.broadPhaseMs,     solverTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
     DrawBar("Warmstart",  t.warmstartMs,      solverTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
     DrawBar("Prediction", t.predictionMs,     solverTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
-    DrawBar("Solve",      t.primalDualMs,     solverTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+    DrawBar("Solve",       t.primalDualMs,        solverTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+    DrawBar(" Constraints", t.solveConstraintsMs, solverTotal, ImVec4(0.1f, 0.6f, 0.4f, 1.0f));
+    DrawBar(" Energies",    t.solveEnergiesMs,    solverTotal, ImVec4(0.1f, 0.5f, 0.7f, 1.0f));
+    DrawBar(" LDLT",        t.solveLDLTMs,        solverTotal, ImVec4(0.1f, 0.4f, 0.9f, 1.0f));
     DrawBar("Velocity",   t.velocityUpdateMs, solverTotal, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
     DrawBar("PostStab",   t.postStabMs,       solverTotal, ImVec4(0.7f, 0.3f, 0.9f, 1.0f));
 

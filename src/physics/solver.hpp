@@ -14,6 +14,9 @@ struct SolverTimings
     float warmstartMs       = 0.0f;
     float predictionMs      = 0.0f;
     float primalDualMs      = 0.0f;
+    float solveConstraintsMs = 0.0f;
+    float solveEnergiesMs   = 0.0f;
+    float solveLDLTMs       = 0.0f;
     float velocityUpdateMs  = 0.0f;
     float postStabMs        = 0.0f;
     float totalSubstepMs    = 0.0f;
