@@ -94,6 +94,21 @@ inline Eigen::Vector3f genRandomPos(float minBounds[3], float maxBounds[3])
 }
 
 //================================//
+inline Eigen::Matrix3f Cof(const Eigen::Matrix3f& F)
+{
+    Eigen::Matrix3f cofF;
+    cofF(0,0) =  F(1,1)*F(2,2) - F(1,2)*F(2,1);
+    cofF(0,1) = -(F(1,0)*F(2,2) - F(1,2)*F(2,0));
+    cofF(0,2) =  F(1,0)*F(2,1) - F(1,1)*F(2,0);
+    cofF(1,0) = -(F(0,1)*F(2,2) - F(0,2)*F(2,1));
+    cofF(1,1) =  F(0,0)*F(2,2) - F(0,2)*F(2,0);
+    cofF(1,2) = -(F(0,0)*F(2,1) - F(0,1)*F(2,0));
+    cofF(2,0) =  F(0,1)*F(1,2) - F(0,2)*F(1,1);
+    cofF(2,1) = -(F(0,0)*F(1,2) - F(0,2)*F(1,0));
+    cofF(2,2) =  F(0,0)*F(1,1) - F(0,1)*F(1,0);
+}
+
+//================================//
 // NEO HOOKEAN SPECIFIC MATHS     //
 //================================//
 enum class EigenProjectionMode
@@ -140,6 +155,9 @@ namespace NeoHookeanMath
 
     //================================//
     Eigen::Matrix3f ReconstructVertexHessian(const SVDDecomposition& svd, const HessianDecomposition& hessDecomp, const float* projectedEigenValues, const Eigen::Vector3f& gradN, float restVolume);
+
+    //================================//
+    bool ComputeExactVertexHessian(const Eigen::Matrix3f& F, float J, const Eigen::Vector3f& gradN, float mu, float lambda, float restVolume, Eigen::Matrix3f& out);
 } // NEO HOOKEAN MATH NAMESPACE
 
 //================================//
@@ -187,6 +205,9 @@ namespace STVKMath
         const float* projectedEigenValues,
         const Eigen::Vector2f& gradN_mat,
         float restArea);
+
+    //================================//
+    bool ComputeExactVertexHessian(const F32& F, const Eigen::Vector2f& gradN, float mu, float lambda, float restArea, Eigen::Matrix3f& out);
 
 } // STVK MATH NAMESPACE
 

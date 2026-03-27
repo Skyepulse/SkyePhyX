@@ -1,4 +1,5 @@
 #include "energy.hpp"
+#include "solver.hpp"
 using namespace STVKMath;
 
 //================================//
@@ -60,6 +61,16 @@ void STVKFEM::ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectionMode,
     grad.setZero();
     grad.head<3>() = restArea * (P * gradN);
 
+    hess.setZero();
+
+    if (solver->exactHessian)
+    {
+        Eigen::Matrix3f exactH;
+        if (ComputeExactVertexHessian(F, gradN, lameMu, lameLambda, restArea, exactH))
+            hess.block<3, 3>(0, 0) = exactH;
+        return;
+    }
+
     SVDDecomposition SVD = svd(F);
     HessianDecomposition hessDecomp = ComputeEnergyHessian(SVD.S, lameMu, lameLambda);
 
@@ -68,7 +79,6 @@ void STVKFEM::ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectionMode,
         projectedEigenValues[i] = hessDecomp.eigenValues[i];
     NeoHookeanMath::ProjectEigenvalues(projectedEigenValues, 4, projectionMode, trustRegionRho, trustRegionThreshold);
 
-    hess.setZero();
     hess.block<3, 3>(0, 0) = ReconstructVertexHessian(SVD, hessDecomp, projectedEigenValues, gradN, restArea);
 }
 

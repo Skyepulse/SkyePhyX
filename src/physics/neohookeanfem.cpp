@@ -1,4 +1,5 @@
 #include "energy.hpp"
+#include "solver.hpp"
 using namespace NeoHookeanMath;
 
 //================================//
@@ -68,6 +69,16 @@ void NeoHookeanFEM::ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectio
     grad.setZero(); // NO rotational component.
     grad.head<3>() = gradient;
 
+    hess.setZero();
+
+    if (solver->exactHessian)
+    {
+        Eigen::Matrix3f exactH;
+        if (ComputeExactVertexHessian(F, J, gradN, lameMu, lameLambda, restVolume, exactH))
+            hess.block<3, 3>(0, 0) = exactH;
+        return;
+    }
+
     SVDDecomposition SVD = svd(F);
     HessianDecomposition hessDecomp = ComputeEnergyHessian(SVD.S, J, lameMu, lameLambda);
 
@@ -76,10 +87,7 @@ void NeoHookeanFEM::ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectio
         projectedEigenValues[i] = hessDecomp.eigenValues[i];
     ProjectEigenvalues(projectedEigenValues, 9, projectionMode, trustRegionRho, trustRegionThreshold);
 
-    Eigen::Matrix3f HV = ReconstructVertexHessian(SVD, hessDecomp, projectedEigenValues, gradN, restVolume);
-
-    hess.setZero();
-    hess.block<3, 3>(0, 0) = HV;
+    hess.block<3, 3>(0, 0) = ReconstructVertexHessian(SVD, hessDecomp, projectedEigenValues, gradN, restVolume);
 }
 
 //================================//

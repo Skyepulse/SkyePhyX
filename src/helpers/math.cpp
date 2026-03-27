@@ -10,6 +10,7 @@
 namespace NeoHookeanMath
 {
     //================================//
+    //================================//
     SVDDecomposition svd(const Eigen::Matrix3f& F)
     {
         SVDDecomposition result{};
@@ -60,23 +61,17 @@ namespace NeoHookeanMath
     //================================//
     Eigen::Matrix3f ComputeFirstPiolaKirchhoff(const Eigen::Matrix3f& F, float J, float mu, float lambda)
     {
-        // P = μF + (λ·ln(J) − μ)/J · cof(F)
+        // P = μ(F − F⁻ᵀ) + λ·ln(J)·F⁻ᵀ
+        // P = μF + (λ·ln(J) − μ)F-ᵀ
+        // P = μF + (λ·ln(J) − μ)/J · JF⁻ᵀ
+        // P = μF + (λ·ln(J) − μ)/J · cof(F) with cof(F) = JF⁻ᵀ
+        // Source:
+        // https://viterbi-web.usc.edu/~jbarbic/femdefo/sifakis-courseNotes-TheoryAndDiscretization.pdf
+        // 3.6
         float logJ = std::log(J);
         float scalar = (lambda * logJ - mu) / J;
 
-        Eigen::Matrix3f cofF;
-        cofF << (F(1,1)*F(2,2) - F(1,2)*F(2,1)),
-                -(F(1,0)*F(2,2) - F(1,2)*F(2,0)),
-                (F(1,0)*F(2,1) - F(1,1)*F(2,0)),
-
-                -(F(0,1)*F(2,2) - F(0,2)*F(2,1)),
-                (F(0,0)*F(2,2) - F(0,2)*F(2,0)),
-                -(F(0,0)*F(2,1) - F(0,1)*F(2,0)),
-
-                (F(0,1)*F(1,2) - F(0,2)*F(1,1)),
-                -(F(0,0)*F(1,2) - F(0,2)*F(1,0)),
-                (F(0,0)*F(1,1) - F(0,1)*F(1,0));
-
+        Eigen::Matrix3f cofF = Cof(F);
         return mu * F + scalar * cofF;
     }
 
@@ -228,6 +223,32 @@ namespace NeoHookeanMath
 
         return hessianVertex * restVolume;
     }
+
+    //================================//
+    bool ComputeExactVertexHessian(const Eigen::Matrix3f& F, float J, const Eigen::Vector3f& gradN,
+                                    float mu, float lambda, float restVolume, Eigen::Matrix3f& out)
+    {
+        // H_v = V0 * [ mu*||gradN||^2 * I  +  alpha * (cofF*gradN)(cofF*gradN)^T ]
+        // alpha = (lambda*(1 - ln J) + mu) / J^2
+        // Singular iff: mu*||gradN||^2 + alpha*||cofF*gradN||^2 == 0
+
+        Eigen::Matrix3f cofF = Cof(F);
+
+        float logJ  = std::log(J);
+        float alpha = (lambda * (1.0f - logJ) + mu) / (J * J);
+
+        Eigen::Vector3f GN = cofF * gradN;
+
+
+        float diag = mu * gradN.squaredNorm();
+        float critEigenvalue = diag + alpha * GN.squaredNorm();
+
+        if (diag < 1e-12f || std::abs(critEigenvalue) < 1e-8f)
+            return false;
+
+        out = restVolume * (diag * Eigen::Matrix3f::Identity() + alpha * GN * GN.transpose());
+        return true;
+    }
 };
 
 //================================//
@@ -266,17 +287,24 @@ namespace STVKMath
     //================================//
     float ComputeEnergyDensity(const F32& F, float mu, float lambda)
     {
-        Eigen::Matrix2f L = 0.5f * (F.transpose() * F - Eigen::Matrix2f::Identity());
-        float trL = L.trace();
-        return mu * L.squaredNorm() + 0.5f * lambda * trL * trL;
+        // Ψ = μ||E||² + (λ/2)(tr E)²
+        Eigen::Matrix2f E = 0.5f * (F.transpose() * F - Eigen::Matrix2f::Identity());
+        float trE = E.trace();
+        return mu * E.squaredNorm() + 0.5f * lambda * trE * trE;
     }
 
     //================================//
+    // S (second piola-kirchhoff) = 2μE + λ(tr E)I
+    // E = (FᵀF − I)/2
+    // P = F * S
+    // Source:
+    // https://viterbi-web.usc.edu/~jbarbic/femdefo/sifakis-courseNotes-TheoryAndDiscretization.pdf
+    // 3.3
     F32 ComputeFirstPiolaKirchhoff(const F32& F, float mu, float lambda)
     {
-        Eigen::Matrix2f L = 0.5f * (F.transpose() * F - Eigen::Matrix2f::Identity());
-        float trL = L.trace();
-        return F * (2.f * mu * L + lambda * trL * Eigen::Matrix2f::Identity());
+        Eigen::Matrix2f E = 0.5f * (F.transpose() * F - Eigen::Matrix2f::Identity());
+        float trE = E.trace();
+        return F * (2.f * mu * E + lambda * trE * Eigen::Matrix2f::Identity());
     }
 
     //================================//
@@ -353,6 +381,26 @@ namespace STVKMath
         addOuter(projectedEigenValues[3], INV_SQRT2 * (vdotg[1]*u[0] + vdotg[0]*u[1]));
 
         return hessianVertex * restArea;
+    }
+
+    //================================//
+    bool ComputeExactVertexHessian(const F32& F, const Eigen::Vector2f& gradN,
+                                    float mu, float lambda, float restArea, Eigen::Matrix3f& out)
+    {
+        // H_v = V0 * [ (g^T S g) I3  +  mu*||g||^2 * (FF^T)  +  (mu+lambda) * (Fg)(Fg)^T ]
+        Eigen::Matrix2f E = 0.5f * (F.transpose() * F - Eigen::Matrix2f::Identity());
+        float trE = E.trace();
+        Eigen::Matrix2f S = 2.0f * mu * E + lambda * trE * Eigen::Matrix2f::Identity();
+
+        float gSg    = gradN.dot(S * gradN);
+        float gNorm2 = gradN.squaredNorm();
+        Eigen::Vector3f Fg = F * gradN;
+
+        out = restArea * (gSg * Eigen::Matrix3f::Identity()
+                        + mu * gNorm2 * (F * F.transpose())
+                        + (mu + lambda) * (Fg * Fg.transpose()));
+
+        return std::abs(out.determinant()) > 1e-10f;
     }
 
 } // STVK MATH NAMESPACE
