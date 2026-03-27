@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <map>
 #include "../constants.hpp"
 
 const Eigen::Vector3f GRAVITY(0.0f, -9.81f, 0.0f);
@@ -44,6 +45,78 @@ void Solver::Clear()
     prevTotalEnergy = 0.f;
     trustRegionRho  = 0.f;
     emergencyStop = false;
+    surfaceDirty = true;
+    surfaceFaces.clear();
+    softBodySurfaceData.clear();
+}
+
+//================================//
+void Solver::BuildSoftBodySurface()
+{
+    surfaceFaces.clear();
+
+    std::vector<std::array<Mesh*, 3>> allFaces;
+    allFaces.reserve(solverEnergies.size() * 4);
+    for (auto& e : solverEnergies)
+        e->AddFaces(allFaces);
+
+    std::map<std::tuple<Mesh*, Mesh*, Mesh*>, int> faceCount;
+    std::map<std::tuple<Mesh*, Mesh*, Mesh*>, std::array<Mesh*, 3>> firstSeen;
+
+    for (const auto& f : allFaces)
+    {
+        std::array<Mesh*, 3> sorted = f;
+        std::sort(sorted.begin(), sorted.end());
+        auto key = std::make_tuple(sorted[0], sorted[1], sorted[2]);
+        faceCount[key]++;
+        if (faceCount[key] == 1)
+            firstSeen[key] = f;
+    }
+
+    for (const auto& [key, count] : faceCount)
+    {
+        if (count == 1)
+            surfaceFaces.push_back(firstSeen[key]);
+    }
+}
+
+//================================//
+void Solver::UpdateSoftBodySurfaceData()
+{
+    softBodySurfaceData.clear();
+    softBodySurfaceData.reserve(surfaceFaces.size() * 3);
+
+    for (const auto& face : surfaceFaces)
+    {
+        Eigen::Vector3f p0 = face[0]->transform.GetPosition();
+        Eigen::Vector3f p1 = face[1]->transform.GetPosition();
+        Eigen::Vector3f p2 = face[2]->transform.GetPosition();
+
+        Eigen::Vector3f n = (p1 - p0).cross(p2 - p0).normalized();
+        Eigen::Vector3f color = (face[0]->color + face[1]->color + face[2]->color) / 3.0f;
+
+        GPUSoftBodyVertex v0{};
+        Eigen::Map<Eigen::Vector3f>(v0.pos) = p0;
+        Eigen::Map<Eigen::Vector3f>(v0.norm) = n;
+        Eigen::Map<Eigen::Vector3f>(v0.color) = color;
+        v0.color[3] = 1.0f;
+
+        GPUSoftBodyVertex v1{};
+        Eigen::Map<Eigen::Vector3f>(v1.pos) = p1;
+        Eigen::Map<Eigen::Vector3f>(v1.norm) = n;
+        Eigen::Map<Eigen::Vector3f>(v1.color) = color;
+        v1.color[3] = 1.0f;
+
+        GPUSoftBodyVertex v2{};
+        Eigen::Map<Eigen::Vector3f>(v2.pos) = p2;
+        Eigen::Map<Eigen::Vector3f>(v2.norm) = n;
+        Eigen::Map<Eigen::Vector3f>(v2.color) = color;
+        v2.color[3] = 1.0f;
+
+        softBodySurfaceData.push_back(v0);
+        softBodySurfaceData.push_back(v1);
+        softBodySurfaceData.push_back(v2);
+    }
 }
 
 //================================//
@@ -199,6 +272,13 @@ bool Solver::CheckExplosion()
 void Solver::Step()
 {
     if (this->emergencyStop) return;
+
+    if (surfaceDirty)
+    {
+        BuildSoftBodySurface();
+        surfaceDirty = false;
+    }
+    UpdateSoftBodySurfaceData();
 
     SolverTimings& out = this->timings;
 

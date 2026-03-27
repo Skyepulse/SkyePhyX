@@ -94,6 +94,7 @@ void GameManager::RunMainLoop()
 
         auto t2 = Clock::now();
         this->renderEngine->UpdateLineBuffer(this->solver->lineData);
+        this->renderEngine->UpdateSoftBodySurfaceBuffer(this->solver->softBodySurfaceData);
 
         auto t3 = Clock::now();
         this->renderEngine->UpdateDebugPointBuffer(this->solver->debugPointData);

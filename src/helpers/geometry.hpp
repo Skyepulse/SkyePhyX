@@ -59,6 +59,13 @@ struct GPUDebugPointData
     float color[4];
 };
 
+struct GPUSoftBodyVertex
+{
+    float pos[3];
+    float norm[3];
+    float color[4];
+};
+
 
 //================================//
 class Transform

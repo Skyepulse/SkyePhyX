@@ -86,6 +86,12 @@ void STVKFEM::HandleInvertedElement(Mesh* mesh, const F32& F, const Eigen::Vecto
 }
 
 //================================//
+void STVKFEM::AddFaces(std::vector<std::array<Mesh*, 3>>& faces) const
+{
+    faces.push_back({body0, body1, body2});
+}
+
+//================================//
 void STVKFEM::AddLineData(std::vector<GPULineData>& data) const
 {
     std::vector<std::array<Mesh*, 2>> edges = {

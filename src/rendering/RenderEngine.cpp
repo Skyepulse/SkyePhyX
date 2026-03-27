@@ -70,6 +70,7 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
 
     ImGui::Checkbox("Show Force Lines", &this->showForceLines);
     ImGui::Checkbox("Show Debug Points", &this->showDebugPoints);
+    ImGui::Checkbox("Show Soft Body Surface", &this->showSoftBodySurface);
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -243,6 +244,14 @@ void RenderEngine::Render(void* userData)
                 batch.slot.vertexOffset,
                 batch.firstInstanceOffset
             );
+        }
+
+        if (this->numSoftBodyVertices > 0 && this->showSoftBodySurface)
+        {
+            pass.SetPipeline(this->softBodyRenderPipeline.Get());
+            pass.SetBindGroup(0, this->lineBindGroup.Get());
+            pass.SetVertexBuffer(0, this->softBodyVertexBuffer.Get());
+            pass.Draw(this->numSoftBodyVertices);
         }
 
         if (this->numLines > 0 && this->showForceLines)
@@ -669,6 +678,83 @@ void RenderEngine::BuildPipeline()
     pipelineDesc.primitive = primitiveState;
     pipelineDesc.depthStencil = &depthStencilState;
     this->debugRenderPipeline = this->wgpuBundle->GetDevice().CreateRenderPipeline(&pipelineDesc);
+
+    // Soft body surface pipeline
+    if (getShaderCodeFromFile("Shaders/softbody_vert.wgsl", vertShaderCode) < 0)
+    {
+        throw std::runtime_error(
+            "[ERROR][RenderEngine] Failed to load vertex shader code from path: " +
+            (getExecutableDirectory() / "Shaders/softbody_vert.wgsl").string()
+        );
+    }
+    if (getShaderCodeFromFile("Shaders/softbody_frag.wgsl", fragShaderCode) < 0)
+    {
+        throw std::runtime_error(
+            "[ERROR][RenderEngine] Failed to load fragment shader code from path: " +
+            (getExecutableDirectory() / "Shaders/softbody_frag.wgsl").string()
+        );
+    }
+
+    combinedShaderCode = vertShaderCode + "\n" + fragShaderCode;
+    wgsl.code = combinedShaderCode.c_str();
+    shaderDesc.nextInChain = &wgsl;
+    shaderDesc.label = "SoftBodyShaderModule";
+
+    this->softBodyShaderModule = this->wgpuBundle->GetDevice().CreateShaderModule(&shaderDesc);
+    if (!this->softBodyShaderModule)
+    {
+        throw std::runtime_error("[ERROR][RenderEngine] Failed to create soft body shader module.");
+    }
+
+    pipelineLayoutDesc.label = "SoftBodyPipelineLayout";
+    pipelineLayoutDesc.bindGroupLayouts = &this->lineBindGroupLayout;
+    pipelineLayoutDesc.bindGroupLayoutCount = 1;
+    this->softBodyPipelineLayout = this->wgpuBundle->GetDevice().CreatePipelineLayout(&pipelineLayoutDesc);
+
+    attributes[0].shaderLocation = 0;
+    attributes[0].format = wgpu::VertexFormat::Float32x3;
+    attributes[0].offset = offsetof(GPUSoftBodyVertex, pos);
+
+    attributes[1].shaderLocation = 1;
+    attributes[1].format = wgpu::VertexFormat::Float32x3;
+    attributes[1].offset = offsetof(GPUSoftBodyVertex, norm);
+
+    attributes[2].shaderLocation = 2;
+    attributes[2].format = wgpu::VertexFormat::Float32x4;
+    attributes[2].offset = offsetof(GPUSoftBodyVertex, color);
+
+    vertexBufferLayout.arrayStride = sizeof(GPUSoftBodyVertex);
+    vertexBufferLayout.attributeCount = 3;
+    vertexBufferLayout.attributes = attributes;
+    vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
+
+    vertexState.module = this->softBodyShaderModule;
+    vertexState.entryPoint = "vs";
+    vertexState.bufferCount = 1;
+    vertexState.buffers = &vertexBufferLayout;
+
+    colorTarget.format = this->wgpuBundle->GetPreferedPresentationFormat();
+    colorTarget.writeMask = wgpu::ColorWriteMask::All;
+
+    fragmentState.module = this->softBodyShaderModule;
+    fragmentState.entryPoint = "fs";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTarget;
+
+    primitiveState.topology = wgpu::PrimitiveTopology::TriangleList;
+    primitiveState.cullMode = wgpu::CullMode::None;
+
+    depthStencilState.format = wgpu::TextureFormat::Depth24Plus;
+    depthStencilState.depthWriteEnabled = true;
+    depthStencilState.depthCompare = wgpu::CompareFunction::Less;
+
+    pipelineDesc.label = "SoftBodyRenderPipeline";
+    pipelineDesc.layout = this->softBodyPipelineLayout;
+    pipelineDesc.vertex = vertexState;
+    pipelineDesc.fragment = &fragmentState;
+    pipelineDesc.primitive = primitiveState;
+    pipelineDesc.depthStencil = &depthStencilState;
+    this->softBodyRenderPipeline = this->wgpuBundle->GetDevice().CreateRenderPipeline(&pipelineDesc);
 }
 
 //================================//
@@ -821,6 +907,14 @@ void RenderEngine::BuildBuffers()
     bindGroupDesc.entries = lineBGentries;
     this->lineBindGroup = this->wgpuBundle->GetDevice().CreateBindGroup(&bindGroupDesc);
 
+    // Soft body surface vertex buffer
+    this->maxSoftBodyVertices = 4096;
+    wgpu::BufferDescriptor softBodyBufferDesc{};
+    softBodyBufferDesc.label = "SoftBodyVertexBuffer";
+    softBodyBufferDesc.size = sizeof(GPUSoftBodyVertex) * this->maxSoftBodyVertices;
+    softBodyBufferDesc.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+    this->softBodyVertexBuffer = this->wgpuBundle->GetDevice().CreateBuffer(&softBodyBufferDesc);
+
     // Sphere geometry buffer for debug rendering
     MeshData sphereData = GeometryGenerator::GenerateSphere(16, 16);
     wgpu::BufferDescriptor debugVertexBufferDesc{};
@@ -943,6 +1037,32 @@ void RenderEngine::UpdateLineBuffer(const std::vector<GPULineData>& lineData)
             0,
             lineData.data(),
             sizeof(GPULineData) * lineData.size()
+        );
+    }
+}
+
+//================================//
+void RenderEngine::UpdateSoftBodySurfaceBuffer(const std::vector<GPUSoftBodyVertex>& data)
+{
+    if (data.size() > this->maxSoftBodyVertices)
+    {
+        this->maxSoftBodyVertices = data.size() * 2;
+
+        wgpu::BufferDescriptor softBodyBufferDesc{};
+        softBodyBufferDesc.label = "SoftBodyVertexBuffer";
+        softBodyBufferDesc.size = sizeof(GPUSoftBodyVertex) * this->maxSoftBodyVertices;
+        softBodyBufferDesc.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+        this->softBodyVertexBuffer = this->wgpuBundle->GetDevice().CreateBuffer(&softBodyBufferDesc);
+    }
+
+    this->numSoftBodyVertices = static_cast<uint32_t>(data.size());
+    if (data.size() > 0)
+    {
+        this->wgpuBundle->GetDevice().GetQueue().WriteBuffer(
+            this->softBodyVertexBuffer,
+            0,
+            data.data(),
+            sizeof(GPUSoftBodyVertex) * data.size()
         );
     }
 }

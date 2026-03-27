@@ -143,6 +143,7 @@ public:
     void UpdateInstanceBuffer(std::vector<Mesh*>& meshes);
     void UpdateLineBuffer(const std::vector<GPULineData>& lineData);
     void UpdateDebugPointBuffer(const std::vector<GPUDebugPointData>& debugPointData);
+    void UpdateSoftBodySurfaceBuffer(const std::vector<GPUSoftBodyVertex>& data);
     void SetSolverStepTime(float time) { this->solverStepTimeMs = time; }
 
     //================================//
@@ -161,6 +162,7 @@ private:
     bool wireframe = false;
     bool showForceLines = true;
     bool showDebugPoints = true;
+    bool showSoftBodySurface = false;
 
     wgpu::QuerySet gpuTimingQuerySet;
     wgpu::Buffer gpuTimingResolveBuffer;
@@ -218,6 +220,14 @@ private:
     wgpu::Buffer pointsInfoStorageBuffer;
     uint32_t maxDebugPoints = 0;
     uint32_t numDebugPoints = 0;
+
+    //============== WGPU OBJECTS (Soft Body Surface Pipeline) ==================//
+    wgpu::ShaderModule softBodyShaderModule;
+    wgpu::PipelineLayout softBodyPipelineLayout;
+    wgpu::RenderPipeline softBodyRenderPipeline;
+    wgpu::Buffer softBodyVertexBuffer;
+    uint32_t maxSoftBodyVertices = 0;
+    uint32_t numSoftBodyVertices = 0;
 
     //================================//
     void InitImGui();

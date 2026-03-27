@@ -4,6 +4,7 @@
 #include "../helpers/geometry.hpp"
 #include "../rendering/RenderEngine.hpp"
 #include "../helpers/math.hpp"
+#include <array>
 
 // MEMO NEOHOOKEAN:
 // E (Stiffness)                ν (Incompressibility)
@@ -42,6 +43,7 @@ struct Energy
     virtual int numBodies() const = 0;
     virtual void AddLineData(std::vector<GPULineData>& data) const = 0;
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const = 0;
+    virtual void AddFaces(std::vector<std::array<Mesh*, 3>>& faces) const {}
 };
 
 //================================//
@@ -79,6 +81,7 @@ struct NeoHookeanFEM: Energy
     virtual int  numBodies() const override { return 4; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const override {}
+    virtual void AddFaces(std::vector<std::array<Mesh*, 3>>& faces) const override;
 
 private:
     void HandleInvertedElement(Mesh* mesh, const Eigen::Matrix3f& F, float J, const Eigen::Vector3f& gradNi);
@@ -115,6 +118,7 @@ struct STVKFEM: Energy
     virtual int  numBodies() const override { return 3; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const override {}
+    virtual void AddFaces(std::vector<std::array<Mesh*, 3>>& faces) const override;
 
 private:
     void HandleInvertedElement(Mesh* mesh, const STVKMath::F32& F, const Eigen::Vector2f& gradN);

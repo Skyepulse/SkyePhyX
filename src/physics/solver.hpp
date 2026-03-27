@@ -5,6 +5,7 @@
 #include "force.hpp"
 #include "energy.hpp"
 #include <vector>
+#include <array>
 
 //================================//
 struct SolverTimings
@@ -35,6 +36,9 @@ public:
 
     std::vector<GPULineData> lineData;
     std::vector<GPUDebugPointData> debugPointData;
+    std::vector<std::array<Mesh*, 3>> surfaceFaces;
+    std::vector<GPUSoftBodyVertex> softBodySurfaceData;
+    bool surfaceDirty = true;
 
     void Start();
     void Clear();
@@ -91,6 +95,8 @@ private:
     Eigen::LDLT<Matrix6f> ldlt;
 
     bool CheckExplosion();
+    void BuildSoftBodySurface();
+    void UpdateSoftBodySurfaceData();
 };
 
 

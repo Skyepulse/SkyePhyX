@@ -132,3 +132,12 @@ void NeoHookeanFEM::AddLineData(std::vector<GPULineData>& data) const
         data.push_back(line);
     }
 }
+
+//================================//
+void NeoHookeanFEM::AddFaces(std::vector<std::array<Mesh*, 3>>& faces) const
+{
+    faces.push_back({body1, body2, body3});
+    faces.push_back({body0, body3, body2});
+    faces.push_back({body0, body1, body3});
+    faces.push_back({body0, body2, body1});
+}
