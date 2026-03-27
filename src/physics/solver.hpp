@@ -89,7 +89,7 @@ public:
     float trustRegionThreshold = 0.01f;
 
     bool emergencyStop = false;
-    bool exactHessian  = false;
+    bool exactHessian  = true;
 
 private:
     std::vector<float> stepTimeAccumulator;

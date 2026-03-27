@@ -162,7 +162,7 @@ private:
     bool wireframe = false;
     bool showForceLines = true;
     bool showDebugPoints = true;
-    bool showSoftBodySurface = false;
+    bool showSoftBodySurface = true;
 
     wgpu::QuerySet gpuTimingQuerySet;
     wgpu::Buffer gpuTimingResolveBuffer;

@@ -9,6 +9,7 @@
 void RenderEngine::InitImGui()
 {
     constexpr float kWebImGuiScale = 0.8f;
+    constexpr float kBaseFontSizePixels = 13.0f;
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -18,8 +19,12 @@ void RenderEngine::InitImGui()
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
 #ifdef __EMSCRIPTEN__
-    io.FontGlobalScale = kWebImGuiScale;
     style.ScaleAllSizes(kWebImGuiScale);
+    io.Fonts->Clear();
+
+    ImFontConfig fontConfig{};
+    fontConfig.SizePixels = kBaseFontSizePixels * kWebImGuiScale;
+    io.Fonts->AddFontDefault(&fontConfig);
 #endif
 
     GLFWwindow* window = this->wgpuBundle->GetGLFWWindow();
@@ -46,6 +51,14 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui_ImplWGPU_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+
+    constexpr float kWindowPadding = 12.0f;
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    ImGui::SetNextWindowPos(
+        ImVec2(viewport->WorkPos.x + kWindowPadding, viewport->WorkPos.y + kWindowPadding),
+        ImGuiCond_FirstUseEver
+    );
 
     ImGui::Begin("Simulation Parameters");
     ImGui::Text("Level Selection");
@@ -97,6 +110,12 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui::SliderFloat("Step value", &this->solver->stepValue, 0.001f, 0.1f);
     ImGui::InputFloat("On Penetration Penalty", &this->solver->onPenetrationPenalty, 100.0f, 10000.0f, "%.1f");
     ImGui::End();
+
+    ImGui::SetNextWindowPos(
+        ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - kWindowPadding, viewport->WorkPos.y + kWindowPadding),
+        ImGuiCond_FirstUseEver,
+        ImVec2(1.0f, 0.0f)
+    );
 
     ImGui::Begin("Performance Metrics");
     ImGui::Text("GPU Draw Time: %.3f ms", this->gpuFrameTimeDrawMs);
