@@ -5,6 +5,7 @@
 // PAPERS:
 // Analytic Eigensystems for Isotropic Distortion Energies (Smith, de Goes, Kim 2018)
 // Trust-Region Eigenvalue Filtering for Projected Newton (Chen, et al. 2024)
+// FEM Simulation of 3D Deformable Solids: A practitioner’s guide to theory, discretization and model reduction (Sifakis, Barbic 2012)
 
 //================================//
 namespace NeoHookeanMath
