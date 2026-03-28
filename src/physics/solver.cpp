@@ -320,6 +320,8 @@ void Solver::Step()
             Mesh* mesh = bodyPtrs[i];
             Mesh* other = bodyPtrs[j];
 
+            if (other->isStatic && mesh->isStatic) continue;
+
             Eigen::Vector3f pos1 = mesh->transform.GetPosition();
             Eigen::Vector3f pos2 = other->transform.GetPosition();
 

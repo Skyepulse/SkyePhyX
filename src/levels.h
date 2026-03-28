@@ -3,6 +3,7 @@
 
 #include "physics/solver.hpp"
 #include "helpers/camera.hpp"
+#include <random>
 
 using namespace GeometryHelpers;
 
@@ -490,6 +491,7 @@ static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameter
     camera->LookAtDirection(Eigen::Vector3f(0.f, -0.5f, -1.f).normalized());
 }
 
+//================================//
 static void SafetyNet(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     int count = 15;
@@ -547,6 +549,130 @@ static void SafetyNet(Solver* solver, Camera* camera, const LevelParameters& par
 }
 
 //================================//
+static void Particles(Solver* solver, Camera* camera, const LevelParameters& params)
+{
+    const float tubeInnerWidth = 0.55f;
+    const float wallThickness = 0.22f;
+    const float wallHeight = 5.0f;
+    const float cornerOverlap = 0.18f;
+    Eigen::Vector3f scale(tubeInnerWidth + 2.0f * cornerOverlap, wallHeight, wallThickness);
+    const float wallOffset = tubeInnerWidth * 0.5f + wallThickness * 0.5f;
+    for (int i = 0; i < 4; i++)
+    {
+        Quaternionf localRot =  Eigen::AngleAxisf((float)i * M_PI / 2, Eigen::Vector3f::UnitY()) *
+                                Eigen::AngleAxisf(0.0f , Eigen::Vector3f::UnitX()) *
+                                Eigen::AngleAxisf(0.0f , Eigen::Vector3f::UnitZ());
+
+        float signX = (i == 1) ? -1.f : 1.f;
+        float signZ = (i == 0) ? -1.f : 1.f;
+        float isPair = (i % 2 == 0) ? 1.f : 0.f;
+        float isOdd = (i % 2 == 1) ? 1.f : 0.f;
+        Eigen::Vector3f pos(isOdd * signX * wallOffset, 0.f, isPair * signZ * wallOffset);
+
+        Mesh* wall = solver->AddBody(
+            ModelType_Cube, 1.0f, 0.5f,
+            pos, scale,
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            localRot,
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            true,
+            Eigen::Vector3f(isPair, 0.2f, 1.f - isPair)
+        );
+        wall->name = "Wall_" + std::to_string(i);
+        wall->isInvisible = true;
+    }
+
+    // floor
+    Eigen::Vector3f floorScale(
+        tubeInnerWidth + 2.0f * wallThickness + 0.04f,
+        2.0f,
+        tubeInnerWidth + 2.0f * wallThickness + 0.04f
+    );
+    Eigen::Vector3f pos(0.f, -scale.y() * 0.5f - floorScale.y() * 0.5f, 0.f);
+    Mesh* floor = solver->AddBody(
+        ModelType_Cube, 1.0f, 0.5f,
+        pos, floorScale,
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        Quaternionf::Identity(),
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        true,
+        Eigen::Vector3f(1.f, 1.f, 1.f)
+    );
+    floor->name = "Floor";
+    floor->isInvisible = true;
+
+    int numParticles = 300;
+    Eigen::Vector3f particleScale(0.05f, 0.05f, 0.05f);
+    const int particlesX = 4;
+    const int particlesZ = 4;
+    const int particlesPerLayer = particlesX * particlesZ;
+    const int particlesY = (numParticles + particlesPerLayer - 1) / particlesPerLayer;
+    const float spawnMargin = particleScale.x() * 1.8f;
+    const float spreadHalfX = tubeInnerWidth * 0.5f - spawnMargin;
+    const float spreadHalfZ = tubeInnerWidth * 0.5f - spawnMargin;
+    const float particleSpacingX = (2.0f * spreadHalfX) / (particlesX - 1);
+    const float particleSpacingY = 0.14f;
+    const float particleSpacingZ = (2.0f * spreadHalfZ) / (particlesZ - 1);
+    const float floorTop = pos.y() + floorScale.y() * 0.5f;
+    const Eigen::Vector3f pileOrigin(
+        -spreadHalfX,
+        floorTop + 1.1f,
+        -spreadHalfZ
+    );
+    std::mt19937 rng(1337);
+    std::uniform_real_distribution<float> jitterXZ(-particleScale.x() * 0.35f, particleScale.x() * 0.35f);
+    std::uniform_real_distribution<float> jitterY(0.0f, particleScale.y() * 0.8f);
+    std::uniform_real_distribution<float> velocityXZ(-0.8f, 0.8f);
+    std::uniform_real_distribution<float> velocityY(-0.15f, 0.15f);
+    std::uniform_real_distribution<float> spinDist(-6.0f, 6.0f);
+    std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * (float)M_PI);
+
+    for (int i = 0; i < numParticles; i++)
+    {
+        int iy = i / particlesPerLayer;
+        int particleInLayer = i % particlesPerLayer;
+        int ix = particleInLayer % particlesX;
+        int iz = particleInLayer / particlesX;
+
+        Eigen::Vector3f particlePos = pileOrigin + Eigen::Vector3f(
+            ix * particleSpacingX,
+            iy * particleSpacingY,
+            iz * particleSpacingZ
+        );
+        particlePos.x() += ((iy % 2 == 0) ? 1.0f : -1.0f) * particleScale.x() * 0.25f + jitterXZ(rng);
+        particlePos.y() += jitterY(rng);
+        particlePos.z() += (((ix + iy) % 2 == 0) ? -1.0f : 1.0f) * particleScale.z() * 0.25f + jitterXZ(rng);
+
+        Eigen::Vector3f color(
+            0.2f + 0.6f * ((float)ix / (float)(particlesX - 1)),
+            0.4f + 0.4f * ((float)iy / (float)(particlesY - 1)),
+            0.3f + 0.6f * ((float)iz / (float)(particlesZ - 1))
+        );
+        Quaternionf randomRotation =
+            Eigen::AngleAxisf(angleDist(rng), Eigen::Vector3f::UnitY()) *
+            Eigen::AngleAxisf(angleDist(rng), Eigen::Vector3f::UnitX()) *
+            Eigen::AngleAxisf(angleDist(rng), Eigen::Vector3f::UnitZ());
+        Eigen::Vector3f randomVelocity(velocityXZ(rng), velocityY(rng), velocityXZ(rng));
+        Eigen::Vector3f randomSpin(spinDist(rng), spinDist(rng), spinDist(rng));
+
+        float density = params.particleMass / (particleScale.x() * particleScale.y() * particleScale.z());
+        Mesh* particle = solver->AddBody(
+            ModelType_Cube, density, 0.5f,
+            particlePos, particleScale,
+            randomVelocity,
+            randomRotation,
+            randomSpin,
+            false,
+            color
+        );
+        particle->name = "Particle_" + std::to_string(i);
+    }
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, 0.4f, 4.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+}
+
+//================================//
 static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
 {
     DefaultScene,
@@ -559,7 +685,8 @@ static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
     NeoHookeanMesh,
     SoftSpheres,
     ClothSimulation,
-    SafetyNet
+    SafetyNet,
+    Particles
 };
 
 //================================//
@@ -574,9 +701,10 @@ static const char* names[] = {
     "SoftBeam",
     "SoftSpheres",
     "ClothSimulation",
-    "SafetyNet"
+    "SafetyNet",
+    "Particles"
 };
 
-static const int numLevels = 11;
+static const int numLevels = 12;
 
 #endif // levels.h

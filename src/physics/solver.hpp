@@ -74,7 +74,7 @@ public:
     SolverTimings timings;
 
     // Changing Parameters
-    bool postStabilization = true;
+    bool postStabilization = false;
     //int numSubsteps = 4;
     int numIterations = 10;
     float alpha = 0.95f;

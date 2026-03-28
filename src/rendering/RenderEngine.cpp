@@ -1121,6 +1121,8 @@ void RenderEngine::UpdateInstanceBuffer(std::vector<Mesh*>& bodies)
         auto it = this->modelBatches.find(body->modelType);
         if (it == this->modelBatches.end()) continue; // unknown model type??
 
+        if (body->isInvisible) continue;
+
         GPUInstanceData instanceData{};
         body->transform.GetModelMatrix(modelMatrixBuffer);
         body->transform.GetNormalMatrix(instanceData.normalMatrix);

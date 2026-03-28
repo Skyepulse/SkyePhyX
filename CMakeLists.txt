@@ -20,8 +20,8 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 if(MSVC)
     add_compile_options(/FS)
 elseif(EMSCRIPTEN)
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math -DNDEBUG" CACHE STRING "" FORCE)
-    set(CMAKE_C_FLAGS_RELEASE   "-O3 -ffast-math -DNDEBUG" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "" FORCE)
+    set(CMAKE_C_FLAGS_RELEASE   "-O3 -DNDEBUG" CACHE STRING "" FORCE)
 endif()
 
 # ============================================
@@ -143,7 +143,6 @@ if(EMSCRIPTEN)
       "-sASYNCIFY=1"
       "-sASYNCIFY_STACK_SIZE=16384"
       "-sUSE_GLFW=3"
-      "--preload-file=${CMAKE_SOURCE_DIR}/Shaders@/Shaders"
       "--preload-file=${CMAKE_SOURCE_DIR}/web-data@/data"
       "--shell-file=${CMAKE_SOURCE_DIR}/webSpecifics/shell.html"
       "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"

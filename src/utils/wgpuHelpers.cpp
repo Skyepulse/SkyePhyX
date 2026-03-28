@@ -4,6 +4,10 @@
 #include <fstream>
 #include <iostream>
 
+#ifdef __EMSCRIPTEN__
+    #include "embeddedShaders.hpp"
+#endif
+
 #ifdef _WIN32
     #include <windows.h>
 #elif defined(__EMSCRIPTEN__)
@@ -102,6 +106,12 @@ int wgpuCreateDevice(const wgpu::Instance instance, const wgpu::Adapter& adapter
 int getShaderCodeFromFile(const std::string& filepath, std::string& outShaderCode) 
 {   
 #ifdef __EMSCRIPTEN__
+    if (const char* embeddedShaderSource = GetEmbeddedShaderSource(filepath))
+    {
+        outShaderCode = embeddedShaderSource;
+        return 0;
+    }
+
     FILE* file = fopen(filepath.c_str(), "rb");
     if (!file) 
     {

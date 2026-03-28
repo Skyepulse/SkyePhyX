@@ -173,6 +173,9 @@ struct Mesh
     Eigen::Matrix3f cachedRotationMatrix;
     Matrix6f        cachedGeneralizedMass;
 
+    // ---- Miscellaneous ----
+    bool isInvisible = false;
+
     // ---- Mass properties ----
     float mass      = 0.0f;
     float density   = 0.0f;
