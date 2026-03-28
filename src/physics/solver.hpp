@@ -23,6 +23,13 @@ struct SolverTimings
 };
 
 //================================//
+struct BroadPhaseSweepPair
+{
+    int indexA;
+    int indexB;
+};
+
+//================================//
 class Solver
 {
 public:
@@ -101,6 +108,7 @@ private:
     bool CheckExplosion();
     void BuildSoftBodySurface();
     void UpdateSoftBodySurfaceData();
+    std::vector<BroadPhaseSweepPair> broadPhaseSweep();
 };
 
 

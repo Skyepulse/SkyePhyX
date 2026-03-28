@@ -269,6 +269,51 @@ bool Solver::CheckExplosion()
 }
 
 //================================//
+std::vector<BroadPhaseSweepPair> Solver::broadPhaseSweep()
+{
+    std::vector<BroadPhaseSweepPair> pairs;
+
+    // Sort bodies by x-axis AABB min
+    std::vector<std::pair<float, int>> sortedBodies;
+    sortedBodies.reserve(bodyPtrs.size());
+
+    for (int i = 0; i < bodyPtrs.size(); ++i)
+    {
+        Mesh* mesh = bodyPtrs[i];
+        AABB worldAABB = mesh->GetWorldAABB();
+
+        sortedBodies.emplace_back(worldAABB.min.x(), i);
+    }
+    std::sort(sortedBodies.begin(), sortedBodies.end());
+
+    // Sweep and find overlapping AABBs
+    for (int i = 0; i < sortedBodies.size(); ++i)
+    {
+        int idxA = sortedBodies[i].second;
+        Mesh* meshA = bodyPtrs[idxA];
+        AABB aabbA = meshA->GetWorldAABB();
+
+        for (int j = i + 1; j < sortedBodies.size(); ++j)
+        {
+            int idxB = sortedBodies[j].second;
+            Mesh* meshB = bodyPtrs[idxB];
+            AABB aabbB = meshB->GetWorldAABB();
+
+            if (meshA->isStatic && meshB->isStatic) continue;
+
+            if (aabbB.min.x() > aabbA.max.x())
+                break;
+
+            if (aabbA.Overlaps(aabbB))
+            {
+                pairs.push_back({idxA, idxB});
+            }
+        }
+    }
+    return pairs;
+}
+
+//================================//
 void Solver::Step()
 {
     if (this->emergencyStop) return;
@@ -313,28 +358,18 @@ void Solver::Step()
     // 1. Broad phase detection
     auto phaseStart = Clock::now();
     const int N = static_cast<int>(bodyPtrs.size());
-    for (int i = 0; i < N; ++i)
-    {
-        for (int j = i + 1; j < N; ++j)
+    std::vector<BroadPhaseSweepPair> pairs = broadPhaseSweep();
+    for (const auto& pair : pairs)
+    {        
+        Mesh* mesh = bodyPtrs[pair.indexA];
+        Mesh* other = bodyPtrs[pair.indexB];
+
+        if (!isConstrainedTo(mesh, other))
         {
-            Mesh* mesh = bodyPtrs[i];
-            Mesh* other = bodyPtrs[j];
-
-            if (other->isStatic && mesh->isStatic) continue;
-
-            Eigen::Vector3f pos1 = mesh->transform.GetPosition();
-            Eigen::Vector3f pos2 = other->transform.GetPosition();
-
-            float distance = (pos1 - pos2).norm();
-            if (distance < mesh->detectionRadius + other->detectionRadius)
-            {
-                if (!isConstrainedTo(mesh, other))
-                {
-                    this->AddForce(std::make_unique<Manifold>(this, mesh, other));
-                }
-            }
+            this->AddForce(std::make_unique<Manifold>(this, mesh, other));
         }
     }
+
     out.broadPhaseMs = elapsed(phaseStart);
 
     // 1.5 Rebuild force cache after broad phase

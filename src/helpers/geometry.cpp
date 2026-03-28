@@ -2,8 +2,42 @@
 #include "../physics/solver.hpp"
 
 //================================//
+static AABB ComputeLocalAABB(ModelType modelType)
+{
+    AABB aabb;
+    Eigen::Vector3f min = Eigen::Vector3f::Constant(std::numeric_limits<float>::max());
+    Eigen::Vector3f max = Eigen::Vector3f::Constant(std::numeric_limits<float>::lowest());
+
+    switch (modelType)
+    {
+        case ModelType_Cube:
+            min = Eigen::Vector3f(-0.5f, -0.5f, -0.5f);
+            max = Eigen::Vector3f( 0.5f,  0.5f,  0.5f);
+            break;
+        case ModelType_Sphere:
+            min = Eigen::Vector3f(-0.5f, -0.5f, -0.5f);
+            max = Eigen::Vector3f( 0.5f,  0.5f,  0.5f);
+            break;
+        case ModelType_Pyramid:
+            min = Eigen::Vector3f(-0.5f, -0.5f, -0.5f);
+            max = Eigen::Vector3f( 0.5f,  0.5f,  0.5f);
+            break;
+    }
+
+    // Inflate a little bit the AABB
+    Eigen::Vector3f padding(0.01f, 0.01f, 0.01f);
+    min -= padding;
+    max += padding;
+    aabb.min = min;
+    aabb.max = max;
+
+    return aabb;
+}
+
+//================================//
 Mesh::Mesh(Solver* solver, ModelType modelType, const Eigen::Vector3f& color) : modelType(modelType), color(color), solver(solver)
 {
+    localAABB = ComputeLocalAABB(modelType);
     return;
 }
 

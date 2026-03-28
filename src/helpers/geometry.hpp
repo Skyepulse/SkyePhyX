@@ -29,10 +29,23 @@ struct Vertex
     Eigen::Vector2f uv;
 };
 
-//================================//
 struct Triangle
 {
     uint32_t vertexIndices[3];
+};
+
+struct AABB
+{
+    Eigen::Vector3f min;
+    Eigen::Vector3f max;
+
+    //================================//
+    bool Overlaps(const AABB& other)
+    {
+        return (min.x() <= other.max.x() && max.x() >= other.min.x()) &&
+               (min.y() <= other.max.y() && max.y() >= other.min.y()) &&
+               (min.z() <= other.max.z() && max.z() >= other.min.z());
+    }
 };
 
 //================================//
@@ -175,6 +188,7 @@ struct Mesh
 
     // ---- Miscellaneous ----
     bool isInvisible = false;
+    AABB localAABB; // localSpace AABB
 
     // ---- Mass properties ----
     float mass      = 0.0f;
@@ -262,6 +276,26 @@ struct Mesh
         dx.tail<3>() = RotationDifference(qCurr, inertialRotation);
 
         return dx;
+    }
+
+    //================================//
+    AABB GetWorldAABB() const
+    {
+        const Eigen::Vector3f localCenter = 0.5f * (localAABB.min + localAABB.max);
+        const Eigen::Vector3f localExtent = 0.5f * (localAABB.max - localAABB.min);
+
+        const Eigen::Matrix3f rotationMatrix = transform.GetRotation().toRotationMatrix();
+        const Eigen::Matrix3f scaleMatrix = transform.GetScale().asDiagonal();
+        const Eigen::Matrix3f linearTransform = rotationMatrix * scaleMatrix;
+
+        const Eigen::Vector3f worldCenter = transform.TransformPoint(localCenter);
+        const Eigen::Vector3f worldExtent = linearTransform.cwiseAbs() * localExtent;
+
+        return AABB
+        {
+            worldCenter - worldExtent,
+            worldCenter + worldExtent
+        };
     }
 };
 
