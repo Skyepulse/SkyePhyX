@@ -1,8 +1,10 @@
 #include "solver.hpp"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <functional>
 #include "../constants.hpp"
 
 const Eigen::Vector3f GRAVITY(0.0f, -9.81f, 0.0f);
@@ -48,6 +50,9 @@ void Solver::Clear()
     surfaceDirty = true;
     surfaceFaces.clear();
     softBodySurfaceData.clear();
+    broadPhaseEntries.clear();
+    constrainedPairCounts.clear();
+    broadPhaseEntriesDirty = true;
 }
 
 //================================//
@@ -168,6 +173,7 @@ Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const 
 
     raw->solverIndex = static_cast<int>(solverBodies.size());
     solverBodies.push_back(std::move(newMesh));
+    broadPhaseEntriesDirty = true;
 
     this->RebuildPtrCaches();
     return raw;
@@ -177,6 +183,7 @@ Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const 
 void Solver::RemoveBody(Mesh* body)
 {
     // forces removed in destructor
+    broadPhaseEntriesDirty = true;
     int idx = body->solverIndex;
     int last = static_cast<int>(solverBodies.size()) - 1;
     if (idx != last)
@@ -208,6 +215,7 @@ Force* Solver::AddForce(std::unique_ptr<Force> force)
 {
     Force* raw = force.get();
     raw->solverIndex = static_cast<int>(solverForces.size());
+    RegisterForcePairs(raw, 1);
     solverForces.push_back(std::move(force));
     return raw;
 }
@@ -217,6 +225,8 @@ void Solver::RemoveForce(Force* force)
 {
     int idx = force->solverIndex;
     if (idx < 0) return;
+
+    RegisterForcePairs(force, -1);
 
     int last = static_cast<int>(solverForces.size()) - 1;
     if (idx != last)
@@ -269,44 +279,155 @@ bool Solver::CheckExplosion()
 }
 
 //================================//
+MeshPairKey Solver::MakeMeshPairKey(Mesh* meshA, Mesh* meshB)
+{
+    if (std::less<Mesh*>{}(meshB, meshA))
+        std::swap(meshA, meshB);
+
+    return { meshA, meshB };
+}
+
+//================================//
+void Solver::RegisterForcePairs(Force* force, int delta)
+{
+    if (delta == 0) return;
+
+    const int bodyCount = static_cast<int>(force->linkedBodies.size());
+    for (int i = 0; i < bodyCount; ++i)
+    {
+        for (int j = i + 1; j < bodyCount; ++j)
+        {
+            Mesh* bodyA = force->linkedBodies[i];
+            Mesh* bodyB = force->linkedBodies[j];
+            if (bodyA == nullptr || bodyB == nullptr || bodyA == bodyB) continue;
+
+            MeshPairKey key = MakeMeshPairKey(bodyA, bodyB);
+            int& pairCount = constrainedPairCounts[key];
+            pairCount += delta;
+
+            if (pairCount <= 0)
+                constrainedPairCounts.erase(key);
+        }
+    }
+}
+
+//================================//
+bool Solver::HasConstraintPair(Mesh* meshA, Mesh* meshB) const
+{
+    if (meshA == nullptr || meshB == nullptr || meshA == meshB)
+        return false;
+
+    const MeshPairKey key = MakeMeshPairKey(meshA, meshB);
+    return constrainedPairCounts.find(key) != constrainedPairCounts.end();
+}
+
+//================================//
+void Solver::RefreshBroadPhaseEntries()
+{
+    if (broadPhaseEntriesDirty || broadPhaseEntries.size() != bodyPtrs.size())
+    {
+        broadPhaseEntries.clear();
+        broadPhaseEntries.reserve(bodyPtrs.size());
+
+        for (Mesh* mesh : bodyPtrs)
+        {
+            BroadPhaseSweepEntry entry;
+            entry.mesh = mesh;
+            broadPhaseEntries.push_back(entry);
+        }
+
+        broadPhaseEntriesDirty = false;
+    }
+
+    for (BroadPhaseSweepEntry& entry : broadPhaseEntries)
+    {
+        Mesh* mesh = entry.mesh;
+        if (mesh == nullptr) continue;
+
+        const Eigen::Vector3f position = mesh->transform.GetPosition();
+        const Quaternionf rotation = mesh->transform.GetRotation();
+        const Eigen::Vector3f scale = mesh->transform.GetScale();
+
+        const bool transformChanged =
+            !entry.cachedPosition.isApprox(position) ||
+            !entry.cachedRotation.coeffs().isApprox(rotation.coeffs()) ||
+            !entry.cachedScale.isApprox(scale);
+
+        const bool shouldRecompute = !entry.hasCachedAABB || transformChanged;
+
+        if (!shouldRecompute)
+            continue;
+
+        entry.aabb = mesh->GetWorldAABB();
+        entry.minX = entry.aabb.min.x();
+        entry.maxX = entry.aabb.max.x();
+        entry.cachedPosition = position;
+        entry.cachedRotation = rotation;
+        entry.cachedScale = scale;
+        entry.hasCachedAABB = true;
+    }
+}
+
+//================================//
+void Solver::EnsureBroadPhaseOrder()
+{
+    bool isOrdered = true;
+    for (std::size_t i = 1; i < broadPhaseEntries.size(); ++i)
+    {
+        if (broadPhaseEntries[i - 1].minX > broadPhaseEntries[i].minX)
+        {
+            isOrdered = false;
+            break;
+        }
+    }
+
+    // Insertion sort, must know if list is ordered or not already.
+    if (isOrdered)
+        return;
+
+    for (std::size_t i = 1; i < broadPhaseEntries.size(); ++i)
+    {
+        BroadPhaseSweepEntry key = broadPhaseEntries[i];
+        std::size_t j = i;
+        while (j > 0 && broadPhaseEntries[j - 1].minX > key.minX)
+        {
+            broadPhaseEntries[j] = broadPhaseEntries[j - 1];
+            --j;
+        }
+        broadPhaseEntries[j] = key;
+    }
+}
+
+//================================//
 std::vector<BroadPhaseSweepPair> Solver::broadPhaseSweep()
 {
     std::vector<BroadPhaseSweepPair> pairs;
-
-    // Sort bodies by x-axis AABB min
-    std::vector<std::pair<float, int>> sortedBodies;
-    sortedBodies.reserve(bodyPtrs.size());
-
-    for (int i = 0; i < bodyPtrs.size(); ++i)
-    {
-        Mesh* mesh = bodyPtrs[i];
-        AABB worldAABB = mesh->GetWorldAABB();
-
-        sortedBodies.emplace_back(worldAABB.min.x(), i);
-    }
-    std::sort(sortedBodies.begin(), sortedBodies.end());
+    RefreshBroadPhaseEntries();
+    EnsureBroadPhaseOrder();
 
     // Sweep and find overlapping AABBs
-    for (int i = 0; i < sortedBodies.size(); ++i)
+    for (std::size_t i = 0; i < broadPhaseEntries.size(); ++i)
     {
-        int idxA = sortedBodies[i].second;
-        Mesh* meshA = bodyPtrs[idxA];
-        AABB aabbA = meshA->GetWorldAABB();
+        const BroadPhaseSweepEntry& entryA = broadPhaseEntries[i];
+        Mesh* meshA = entryA.mesh;
 
-        for (int j = i + 1; j < sortedBodies.size(); ++j)
+        for (std::size_t j = i + 1; j < broadPhaseEntries.size(); ++j)
         {
-            int idxB = sortedBodies[j].second;
-            Mesh* meshB = bodyPtrs[idxB];
-            AABB aabbB = meshB->GetWorldAABB();
+            const BroadPhaseSweepEntry& entryB = broadPhaseEntries[j];
+            Mesh* meshB = entryB.mesh;
 
-            if (meshA->isStatic && meshB->isStatic) continue;
-
-            if (aabbB.min.x() > aabbA.max.x())
+            if (entryB.minX > entryA.maxX)
                 break;
 
-            if (aabbA.Overlaps(aabbB))
+            if (meshA->isStatic && meshB->isStatic)
+                continue;
+
+            if (HasConstraintPair(meshA, meshB))
+                continue;
+
+            if (entryA.aabb.Overlaps(entryB.aabb))
             {
-                pairs.push_back({idxA, idxB});
+                pairs.push_back({meshA, meshB});
             }
         }
     }
@@ -357,17 +478,10 @@ void Solver::Step()
 
     // 1. Broad phase detection
     auto phaseStart = Clock::now();
-    const int N = static_cast<int>(bodyPtrs.size());
     std::vector<BroadPhaseSweepPair> pairs = broadPhaseSweep();
     for (const auto& pair : pairs)
     {        
-        Mesh* mesh = bodyPtrs[pair.indexA];
-        Mesh* other = bodyPtrs[pair.indexB];
-
-        if (!isConstrainedTo(mesh, other))
-        {
-            this->AddForce(std::make_unique<Manifold>(this, mesh, other));
-        }
+        this->AddForce(std::make_unique<Manifold>(this, pair.bodyA, pair.bodyB));
     }
 
     out.broadPhaseMs = elapsed(phaseStart);

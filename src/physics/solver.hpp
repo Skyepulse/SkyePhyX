@@ -6,6 +6,8 @@
 #include "energy.hpp"
 #include <vector>
 #include <array>
+#include <unordered_map>
+#include <utility>
 
 //================================//
 struct SolverTimings
@@ -25,8 +27,31 @@ struct SolverTimings
 //================================//
 struct BroadPhaseSweepPair
 {
-    int indexA;
-    int indexB;
+    Mesh* bodyA = nullptr;
+    Mesh* bodyB = nullptr;
+};
+
+using MeshPairKey = std::pair<Mesh*, Mesh*>;
+struct MeshPairKeyHash
+{
+    std::size_t operator()(const MeshPairKey& key) const
+    {
+        const std::size_t hashA = std::hash<Mesh*>{}(key.first);
+        const std::size_t hashB = std::hash<Mesh*>{}(key.second);
+        return hashA ^ (hashB << 1);
+    }
+};
+
+struct BroadPhaseSweepEntry
+{
+    Mesh* mesh = nullptr;
+    AABB aabb;
+    float minX = 0.0f;
+    float maxX = 0.0f;
+    Eigen::Vector3f cachedPosition = Eigen::Vector3f::Zero();
+    Quaternionf cachedRotation = Quaternionf::Identity();
+    Eigen::Vector3f cachedScale = Eigen::Vector3f::Ones();
+    bool hasCachedAABB = false;
 };
 
 //================================//
@@ -102,13 +127,21 @@ private:
     std::vector<float> stepTimeAccumulator;
     static constexpr int TIMING_WINDOW = 60;
     std::vector<SolverTimings> timingAccumulator;
+    std::vector<BroadPhaseSweepEntry> broadPhaseEntries;
+    std::unordered_map<MeshPairKey, int, MeshPairKeyHash> constrainedPairCounts;
+    bool broadPhaseEntriesDirty = true;
 
     Eigen::LDLT<Matrix6f> ldlt;
 
     bool CheckExplosion();
     void BuildSoftBodySurface();
     void UpdateSoftBodySurfaceData();
+    void RefreshBroadPhaseEntries();
+    void EnsureBroadPhaseOrder();
     std::vector<BroadPhaseSweepPair> broadPhaseSweep();
+    void RegisterForcePairs(Force* force, int delta);
+    bool HasConstraintPair(Mesh* meshA, Mesh* meshB) const;
+    static MeshPairKey MakeMeshPairKey(Mesh* meshA, Mesh* meshB);
 };
 
 

@@ -40,7 +40,7 @@ struct AABB
     Eigen::Vector3f max;
 
     //================================//
-    bool Overlaps(const AABB& other)
+    bool Overlaps(const AABB& other) const
     {
         return (min.x() <= other.max.x() && max.x() >= other.min.x()) &&
                (min.y() <= other.max.y() && max.y() >= other.min.y()) &&

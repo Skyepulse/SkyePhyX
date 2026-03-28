@@ -78,17 +78,6 @@ struct Force
 };
 
 //================================//
-inline bool isConstrainedTo(Mesh* mesh, Mesh* other)
-{
-    for (Force* f : mesh->forces)
-    {
-        if (std::find(f->linkedBodies.begin(), f->linkedBodies.end(), other) != f->linkedBodies.end())
-            return true;
-    }
-    return false;
-}
-
-//================================//
 struct Spring: Force
 {
     static constexpr int NUM_CONSTRAINTS = 1;
