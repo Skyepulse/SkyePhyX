@@ -20,6 +20,18 @@ public:
     }
 
     //================================//
+    Eigen::Vector3f GetPosition() const
+    {
+        return position;
+    }
+
+    //================================//
+    Eigen::Vector3f GetForwardDirection() const
+    {
+        return forward;
+    }
+
+    //================================//
     void SetFOV(float fovY)
     {
         this->fovY = fovY;

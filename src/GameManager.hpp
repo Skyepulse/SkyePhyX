@@ -56,6 +56,7 @@ private:
     bool restartKeyWasPressed = false;
 
     bool randomBoxSpawnedPressed = false;
+    bool shootBallPressed = false;
     bool mainLoopStarted = false;
     float physicsAccumulator = 0.0f;
 
@@ -67,6 +68,7 @@ private:
 
     //================================//
     void SpawnRandomBox();
+    void SpawnShootingSphere();
 
     //================================//
     int currentLevel = 0;

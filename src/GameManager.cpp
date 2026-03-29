@@ -202,9 +202,9 @@ void GameManager::ProcessEvents(float deltaTime)
     if (glfwGetKey(this->window.get(), GLFW_KEY_UP) == GLFW_PRESS)
         movementDelta.y() += deltaTime * speed;
     if (glfwGetKey(this->window.get(), GLFW_KEY_LEFT) == GLFW_PRESS)
-        camera->RotateByMouseMovement(-deltaTime * 60.0f, 0.0f);
+        camera->RotateByMouseMovement(deltaTime * 6.0f * speed, 0.0f);
     if (glfwGetKey(this->window.get(), GLFW_KEY_RIGHT) == GLFW_PRESS)
-        camera->RotateByMouseMovement(deltaTime * 60.0f, 0.0f);
+        camera->RotateByMouseMovement(-deltaTime * 6.0f * speed, 0.0f);
     
     camera->MoveLocal(movementDelta);
 
@@ -232,6 +232,11 @@ void GameManager::ProcessEvents(float deltaTime)
     if (randomBoxSpawnedKeyPressed && !this->randomBoxSpawnedPressed)
         this->SpawnRandomBox();
     this->randomBoxSpawnedPressed = randomBoxSpawnedKeyPressed;
+
+    bool shootBallKeyPressed = glfwGetKey(this->window.get(), GLFW_KEY_SPACE) == GLFW_PRESS;
+    if (shootBallKeyPressed && !this->shootBallPressed)
+        this->SpawnShootingSphere();
+    this->shootBallPressed = shootBallKeyPressed;
 }
 
 //================================//
@@ -315,6 +320,25 @@ void GameManager::SpawnRandomBox()
 
     Mesh* mesh = this->solver->AddBody(ModelType_Cube, 1.0f, 0.5f, randomPos, randomScale, Eigen::Vector3f(0.0f, 0.0f, 0.0f), randomRotation, Eigen::Vector3f(0.0f, 0.0f, 0.0f), false, randomColor);
     mesh->name = "Random Box " + std::to_string(numBodies);
+}
 
-    std::cout << "[INFO][GameManager] Spawned random box: " << mesh->name << std::endl;
+//================================//
+void GameManager::SpawnShootingSphere()
+{
+    int numBodies = static_cast<int>(this->solver->bodyPtrs.size());
+
+    Eigen::Vector3f spawnPos = this->renderEngine->GetCamera()->GetPosition();
+
+    float sphereRadius = 1.0f;
+
+    Eigen::Vector3f shootingDirection = this->renderEngine->GetCamera()->GetForwardDirection();
+
+    float shootSpeed = 50.0f;
+    Eigen::Vector3f smallUpDrift = Eigen::Vector3f(0.0f, 0.1f, 0.0f);
+    Eigen::Vector3f initialVelocity = (shootingDirection + smallUpDrift).normalized() * shootSpeed;
+
+    Eigen::Vector3f randomColor = Eigen::Vector3f(rand01(), rand01(), rand01());
+
+    Mesh* mesh = this->solver->AddBody(ModelType_Sphere, 1.0f, 0.5f, spawnPos, Eigen::Vector3f(sphereRadius, sphereRadius, sphereRadius), initialVelocity, Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false, randomColor);
+    mesh->name = "Shooting Sphere " + std::to_string(numBodies);
 }
