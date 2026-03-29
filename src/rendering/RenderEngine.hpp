@@ -39,6 +39,12 @@ struct GPUVertex
 };
 static_assert(sizeof(GPUVertex) == 32, "GPUVertex must be tightly packed to 32 bytes for correct buffer layout");
 
+struct GPUHullVertex
+{
+    float position[3];
+};
+static_assert(sizeof(GPUHullVertex) == 12, "GPUHullVertex must be tightly packed to 12 bytes for correct buffer layout");
+
 struct GPUInstanceData
 {
     float modelMatrix[16];  // 64
@@ -53,6 +59,12 @@ struct MeshSlot
     uint32_t vertexOffset;
     uint32_t indexOffset;
     uint32_t indexCount;
+};
+
+struct HullSlot
+{
+    uint32_t vertexOffset;
+    uint32_t vertexCount;
 };
 
 struct ModelBatch
@@ -112,6 +124,20 @@ struct RenderTimings
     RingAccumulator totalFrame;
 };
 
+struct RenderVisibility
+{
+    bool showMeshes = true;
+    bool showConvexHulls = false;
+    bool showForceLines = true;
+    bool showDebugPoints = true;
+    bool showSoftBodySurface = true;
+};
+
+struct MeshRenderOptions
+{
+    bool wireframe = false;
+};
+
 //================================//
 class RenderEngine
 {
@@ -158,10 +184,8 @@ private:
     std::unique_ptr<Camera> camera;
 
     bool resizeFlag = true;
-    bool wireframe = false;
-    bool showForceLines = true;
-    bool showDebugPoints = true;
-    bool showSoftBodySurface = true;
+    MeshRenderOptions meshRenderOptions;
+    RenderVisibility visibility;
 
     wgpu::QuerySet gpuTimingQuerySet;
     wgpu::Buffer gpuTimingResolveBuffer;
@@ -180,6 +204,9 @@ private:
     std::vector<uint32_t> allIndices;
     wgpu::Buffer atlasVertexBuffer;
     wgpu::Buffer atlasIndexBuffer;
+    std::vector<GPUHullVertex> allConvexHullVertices;
+    std::unordered_map<ModelType, HullSlot> convexHullSlots;
+    wgpu::Buffer convexHullVertexBuffer;
 
     //============== WGPU OBJECTS (Normal Pipeline) ==================//
     wgpu::ShaderModule shaderModule;
@@ -206,6 +233,10 @@ private:
     wgpu::Buffer lineVertexBuffer;
     uint32_t maxLines = 0;
     uint32_t numLines = 0;
+
+    //============== WGPU OBJECTS (Convex Hull Pipeline) ==================//
+    wgpu::ShaderModule convexHullShaderModule;
+    wgpu::RenderPipeline convexHullRenderPipeline;
 
     //============== WGPU OBJECTS (Debug Pipeline) ==================//
     wgpu::ShaderModule debugShaderModule;

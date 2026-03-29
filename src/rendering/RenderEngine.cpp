@@ -87,14 +87,20 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     if (ImGui::Button("Reset"))
         this->gameManager->ChangeLevel(currentLevel);
 
-    if (ImGui::Checkbox("Wireframe", &this->wireframe))
+    if (ImGui::Checkbox("Wireframe Meshes", &this->meshRenderOptions.wireframe))
     {
         this->BuildPipeline();
     }
 
-    ImGui::Checkbox("Show Force Lines", &this->showForceLines);
-    ImGui::Checkbox("Show Debug Points", &this->showDebugPoints);
-    ImGui::Checkbox("Show Soft Body Surface", &this->showSoftBodySurface);
+    if (ImGui::TreeNode("Visibility"))
+    {
+        ImGui::Checkbox("Show Meshes", &this->visibility.showMeshes);
+        ImGui::Checkbox("Show Convex Hulls", &this->visibility.showConvexHulls);
+        ImGui::Checkbox("Show Force Lines", &this->visibility.showForceLines);
+        ImGui::Checkbox("Show Debug Points", &this->visibility.showDebugPoints);
+        ImGui::Checkbox("Show Soft Body Surface", &this->visibility.showSoftBodySurface);
+        ImGui::TreePop();
+    }
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -270,26 +276,53 @@ void RenderEngine::Render(void* userData)
 
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPassDesc);
 
-        pass.SetPipeline(this->renderPipeline.Get());
-        pass.SetBindGroup(0, this->instanceBindGroup.Get());
-        pass.SetVertexBuffer(0, this->atlasVertexBuffer.Get());
-        pass.SetIndexBuffer(this->atlasIndexBuffer.Get(), wgpu::IndexFormat::Uint32);
-
-        for (const auto& [modelType, batch] : this->modelBatches)
+        if (this->visibility.showMeshes)
         {
-            if (batch.instanceCount == 0)
-                continue;
+            pass.SetPipeline(this->renderPipeline.Get());
+            pass.SetBindGroup(0, this->instanceBindGroup.Get());
+            pass.SetVertexBuffer(0, this->atlasVertexBuffer.Get());
+            pass.SetIndexBuffer(this->atlasIndexBuffer.Get(), wgpu::IndexFormat::Uint32);
 
-            pass.DrawIndexed(
-                batch.slot.indexCount,
-                batch.instanceCount,
-                batch.slot.indexOffset,
-                batch.slot.vertexOffset,
-                batch.firstInstanceOffset
-            );
+            for (const auto& [modelType, batch] : this->modelBatches)
+            {
+                if (batch.instanceCount == 0)
+                    continue;
+
+                pass.DrawIndexed(
+                    batch.slot.indexCount,
+                    batch.instanceCount,
+                    batch.slot.indexOffset,
+                    batch.slot.vertexOffset,
+                    batch.firstInstanceOffset
+                );
+            }
         }
 
-        if (this->numSoftBodyVertices > 0 && this->showSoftBodySurface)
+        if (this->visibility.showConvexHulls)
+        {
+            pass.SetPipeline(this->convexHullRenderPipeline.Get());
+            pass.SetBindGroup(0, this->instanceBindGroup.Get());
+            pass.SetVertexBuffer(0, this->convexHullVertexBuffer.Get());
+
+            for (const auto& [modelType, batch] : this->modelBatches)
+            {
+                if (batch.instanceCount == 0)
+                    continue;
+
+                auto hullIt = this->convexHullSlots.find(modelType);
+                if (hullIt == this->convexHullSlots.end() || hullIt->second.vertexCount == 0)
+                    continue;
+
+                pass.Draw(
+                    hullIt->second.vertexCount,
+                    batch.instanceCount,
+                    hullIt->second.vertexOffset,
+                    batch.firstInstanceOffset
+                );
+            }
+        }
+
+        if (this->numSoftBodyVertices > 0 && this->visibility.showSoftBodySurface)
         {
             pass.SetPipeline(this->softBodyRenderPipeline.Get());
             pass.SetBindGroup(0, this->lineBindGroup.Get());
@@ -297,7 +330,7 @@ void RenderEngine::Render(void* userData)
             pass.Draw(this->numSoftBodyVertices);
         }
 
-        if (this->numLines > 0 && this->showForceLines)
+        if (this->numLines > 0 && this->visibility.showForceLines)
         {
             pass.SetPipeline(this->lineRenderPipeline.Get());
             pass.SetBindGroup(0, this->lineBindGroup.Get());
@@ -305,7 +338,7 @@ void RenderEngine::Render(void* userData)
             pass.Draw(2, this->numLines);
         }
 
-        if (this->debug && this->numDebugPoints > 0 && this->showDebugPoints)
+        if (this->debug && this->numDebugPoints > 0 && this->visibility.showDebugPoints)
         {
             pass.SetPipeline(this->debugRenderPipeline.Get());
             pass.SetBindGroup(0, this->debugBindGroup.Get());
@@ -524,7 +557,7 @@ void RenderEngine::BuildPipeline()
     fragmentState.targets = &colorTarget;
 
     wgpu::PrimitiveState primitiveState{};
-    primitiveState.topology = this->wireframe ? wgpu::PrimitiveTopology::LineList : wgpu::PrimitiveTopology::TriangleList;
+    primitiveState.topology = this->meshRenderOptions.wireframe ? wgpu::PrimitiveTopology::LineList : wgpu::PrimitiveTopology::TriangleList;
     primitiveState.cullMode = wgpu::CullMode::None;
 
     wgpu::DepthStencilState depthStencilState{};
@@ -625,6 +658,68 @@ void RenderEngine::BuildPipeline()
     pipelineDesc.primitive = primitiveState;
     pipelineDesc.depthStencil = &depthStencilState;
     this->lineRenderPipeline = this->wgpuBundle->GetDevice().CreateRenderPipeline(&pipelineDesc);
+
+    // Convex hull pipeline
+    if (getShaderCodeFromFile("Shaders/convexhull_vert.wgsl", vertShaderCode) < 0)
+    {
+        throw std::runtime_error(
+            "[ERROR][RenderEngine] Failed to load vertex shader code from path: " +
+            (getExecutableDirectory() / "Shaders/convexhull_vert.wgsl").string()
+        );
+    }
+    if (getShaderCodeFromFile("Shaders/convexhull_frag.wgsl", fragShaderCode) < 0)
+    {
+        throw std::runtime_error(
+            "[ERROR][RenderEngine] Failed to load fragment shader code from path: " +
+            (getExecutableDirectory() / "Shaders/convexhull_frag.wgsl").string()
+        );
+    }
+
+    combinedShaderCode = vertShaderCode + "\n" + fragShaderCode;
+    wgsl.code = combinedShaderCode.c_str();
+
+    shaderDesc.nextInChain = &wgsl;
+    shaderDesc.label = "ConvexHullShaderModule";
+
+    this->convexHullShaderModule = this->wgpuBundle->GetDevice().CreateShaderModule(&shaderDesc);
+    if (!this->convexHullShaderModule)
+    {
+        throw std::runtime_error("[ERROR][RenderEngine] Failed to create convex hull shader module.");
+    }
+
+    attributes[0].shaderLocation = 0;
+    attributes[0].format = wgpu::VertexFormat::Float32x3;
+    attributes[0].offset = offsetof(GPUHullVertex, position);
+
+    vertexBufferLayout.arrayStride = sizeof(GPUHullVertex);
+    vertexBufferLayout.attributeCount = 1;
+    vertexBufferLayout.attributes = attributes;
+    vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
+
+    vertexState.module = this->convexHullShaderModule;
+    vertexState.entryPoint = "vs";
+    vertexState.bufferCount = 1;
+    vertexState.buffers = &vertexBufferLayout;
+
+    fragmentState.module = this->convexHullShaderModule;
+    fragmentState.entryPoint = "fs";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTarget;
+
+    primitiveState.topology = wgpu::PrimitiveTopology::LineList;
+    primitiveState.cullMode = wgpu::CullMode::None;
+
+    depthStencilState.format = wgpu::TextureFormat::Depth24Plus;
+    depthStencilState.depthWriteEnabled = false;
+    depthStencilState.depthCompare = wgpu::CompareFunction::LessEqual;
+
+    pipelineDesc.label = "ConvexHullRenderPipeline";
+    pipelineDesc.layout = this->pipelineLayout;
+    pipelineDesc.vertex = vertexState;
+    pipelineDesc.fragment = &fragmentState;
+    pipelineDesc.primitive = primitiveState;
+    pipelineDesc.depthStencil = &depthStencilState;
+    this->convexHullRenderPipeline = this->wgpuBundle->GetDevice().CreateRenderPipeline(&pipelineDesc);
 
     // Debug pipeline
     if (getShaderCodeFromFile("Shaders/debug_vert.wgsl", vertShaderCode) < 0)
@@ -806,6 +901,8 @@ void RenderEngine::BuildGeometryAtlas()
     this->allVertices.clear();
     this->allIndices.clear();
     this->modelBatches.clear();
+    this->allConvexHullVertices.clear();
+    this->convexHullSlots.clear();
 
     struct Entry { ModelType type; MeshData data; };
 
@@ -852,6 +949,35 @@ void RenderEngine::BuildGeometryAtlas()
         totalVertices += entry.data.vertexCount();
         totalIndices += entry.data.indexCount();
     }
+
+    uint32_t totalHullVertices = 0;
+    for (const Entry& entry : entries)
+    {
+        const ConvexHull hull = this->solver->GetModelConvexHull(entry.type);
+
+        HullSlot slot{};
+        slot.vertexOffset = totalHullVertices;
+        slot.vertexCount = 0;
+
+        for (const HullEdge& edge : hull.edges)
+        {
+            if (edge.vertexIndices[0] >= hull.vertices.size() || edge.vertexIndices[1] >= hull.vertices.size())
+                continue;
+
+            GPUHullVertex startVertex{};
+            GPUHullVertex endVertex{};
+
+            Eigen::Map<Eigen::Vector3f>(startVertex.position) = hull.vertices[edge.vertexIndices[0]].position;
+            Eigen::Map<Eigen::Vector3f>(endVertex.position) = hull.vertices[edge.vertexIndices[1]].position;
+
+            this->allConvexHullVertices.push_back(startVertex);
+            this->allConvexHullVertices.push_back(endVertex);
+            slot.vertexCount += 2;
+            totalHullVertices += 2;
+        }
+
+        this->convexHullSlots[entry.type] = slot;
+    }
 }
 
 //================================//
@@ -881,6 +1007,21 @@ void RenderEngine::BuildBuffers()
         this->allIndices.data(),
         sizeof(uint32_t) * this->allIndices.size()
     );
+
+    wgpu::BufferDescriptor convexHullVertexBufferDesc{};
+    convexHullVertexBufferDesc.label = "ConvexHullVertexBuffer";
+    convexHullVertexBufferDesc.size = sizeof(GPUHullVertex) * (this->allConvexHullVertices.empty() ? 1u : static_cast<uint32_t>(this->allConvexHullVertices.size()));
+    convexHullVertexBufferDesc.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+    this->convexHullVertexBuffer = this->wgpuBundle->GetDevice().CreateBuffer(&convexHullVertexBufferDesc);
+    if (!this->allConvexHullVertices.empty())
+    {
+        this->wgpuBundle->GetDevice().GetQueue().WriteBuffer(
+            this->convexHullVertexBuffer,
+            0,
+            this->allConvexHullVertices.data(),
+            sizeof(GPUHullVertex) * this->allConvexHullVertices.size()
+        );
+    }
 
     // Instances
     this->maxInstances = 4096;
