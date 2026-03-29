@@ -78,11 +78,14 @@ namespace CollisionSpace
             return CollisionSphereBox(meshA, meshB);
         }
 
-        if (meshA->modelType == ModelType_Cube && meshB->modelType == ModelType_Cube)
-            return CollisionBoxBox(meshA, meshB);
-
         if (meshA->modelType == ModelType_Sphere && meshB->modelType == ModelType_Sphere)
             return CollisionSphereSphere(meshA, meshB);
+
+        if (meshA->modelType == ModelType_Sphere || meshB->modelType == ModelType_Sphere)
+            return CollisionSphereHull(meshA, meshB);
+
+        if (meshA->modelType == ModelType_Cube && meshB->modelType == ModelType_Cube)
+            return CollisionBoxBox(meshA, meshB);
 
         return CollisionHullHull(meshA, meshB);
     }

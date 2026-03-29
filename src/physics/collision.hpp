@@ -51,6 +51,7 @@ namespace CollisionSpace
     CollisionResult CollisionMeshMesh(const Mesh* A, const Mesh* B);
     CollisionResult CollisionSphereSphere(const Mesh* A, const Mesh* B);
     CollisionResult CollisionSphereBox(const Mesh* A, const Mesh* B);
+    CollisionResult CollisionSphereHull(const Mesh* A, const Mesh* B);
     CollisionResult CollisionBoxBox(const Mesh* A, const Mesh* B);
     CollisionResult CollisionHullHull(const Mesh* A, const Mesh* B);
 }
