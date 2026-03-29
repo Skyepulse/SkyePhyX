@@ -49,6 +49,7 @@ namespace CollisionSpace
             penetration = sphereRadius - distanceToBox;
 
             pointOnBoxWorld = boxCenter + boxRotation * closestPointLocal;
+            pointOnSphereWorld = sphereCenter - normalWorldBoxToSphere * sphereRadius;
         }
         else
         {
@@ -71,15 +72,14 @@ namespace CollisionSpace
             pointOnBoxLocal[bestAxis] = bestSign * boxHalfExtents[bestAxis];
 
             Eigen::Vector3f normalLocalBoxToSphere = Eigen::Vector3f::Zero();
-            normalLocalBoxToSphere[bestAxis] = -bestSign;
+            normalLocalBoxToSphere[bestAxis] = bestSign;
 
             normalWorldBoxToSphere = boxRotation * normalLocalBoxToSphere;
             penetration = sphereRadius + minDistanceToFace;
 
             pointOnBoxWorld = boxCenter + boxRotation * pointOnBoxLocal;
+            pointOnSphereWorld = sphereCenter + normalWorldBoxToSphere * sphereRadius;
         }
-
-        pointOnSphereWorld = sphereCenter - normalWorldBoxToSphere * sphereRadius;
 
         const Eigen::Vector3f normalAToB = sphereIsA ? -normalWorldBoxToSphere : normalWorldBoxToSphere;
         const Eigen::Vector3f pointOnA = sphereIsA ? pointOnSphereWorld : pointOnBoxWorld;
