@@ -20,6 +20,7 @@ static constexpr float MAX_VELOCITY = 500.0f;
 //================================//
 Solver::Solver()
 {
+    GeometryHelpers::computeModelGeometry(modelGeometry);
 }
 
 //================================//

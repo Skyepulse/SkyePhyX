@@ -74,6 +74,13 @@ target_compile_definitions(SkyePhyX PRIVATE
 # ============================================
 include(FetchContent)
 
+# QHull still declares cmake_minimum_required(VERSION 3.0).
+# CMake 4.x removed compatibility with policy versions below 3.5,
+# so we raise the minimum policy compatibility for fetched subprojects.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
+  set(CMAKE_POLICY_VERSION_MINIMUM "3.5" CACHE STRING "" FORCE)
+endif()
+
 # ImGUI
 FetchContent_Declare(
   imgui
@@ -89,6 +96,29 @@ FetchContent_Declare(
   GIT_TAG        3.4.0
 )
 FetchContent_MakeAvailable(eigen)
+
+# QHull
+FetchContent_Declare(
+  qhull
+  GIT_REPOSITORY https://github.com/qhull/qhull.git
+  GIT_TAG        v8.1-alpha1
+)
+FetchContent_GetProperties(qhull)
+if(NOT qhull_POPULATED)
+  FetchContent_Populate(qhull)
+
+  # QHull declares a top-level custom target named `uninstall`, which
+  # collides with Eigen's `uninstall` target in the same superbuild.
+  set(QHULL_CMAKELISTS "${qhull_SOURCE_DIR}/CMakeLists.txt")
+  file(READ "${QHULL_CMAKELISTS}" QHULL_CMAKE_CONTENTS)
+  string(REPLACE "add_custom_target(uninstall"
+                 "add_custom_target(qhull_uninstall"
+                 QHULL_CMAKE_CONTENTS
+                 "${QHULL_CMAKE_CONTENTS}")
+  file(WRITE "${QHULL_CMAKELISTS}" "${QHULL_CMAKE_CONTENTS}")
+
+  add_subdirectory("${qhull_SOURCE_DIR}" "${qhull_BINARY_DIR}" EXCLUDE_FROM_ALL)
+endif()
 
 # ============================================
 # ImGUI configuration
@@ -114,7 +144,18 @@ target_include_directories(SkyePhyX PRIVATE
     ${IMGUI_DIR}/backends
     ${CMAKE_SOURCE_DIR}/includes
     ${eigen_SOURCE_DIR}
+    ${qhull_SOURCE_DIR}/src
 )
+
+# QHull headers live under src/libqhull_r and src/libqhullcpp.
+# Link the C++ wrapper before the re-entrant core library.
+if(TARGET qhullcpp AND TARGET qhullstatic_r)
+  target_link_libraries(SkyePhyX PRIVATE qhullcpp qhullstatic_r)
+elseif(TARGET qhullcpp AND TARGET qhull_r)
+  target_link_libraries(SkyePhyX PRIVATE qhullcpp qhull_r)
+else()
+  message(FATAL_ERROR "QHull targets were fetched, but qhullcpp with a re-entrant library target was not found.")
+endif()
 
 # ============================================
 # Dawn

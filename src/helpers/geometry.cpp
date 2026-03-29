@@ -1,6 +1,8 @@
 #include "geometry.hpp"
 #include "../physics/solver.hpp"
 
+#include <libqhullcpp/Qhull.h>
+
 //================================//
 static AABB ComputeLocalAABB(ModelType modelType)
 {
@@ -37,7 +39,6 @@ static AABB ComputeLocalAABB(ModelType modelType)
 //================================//
 Mesh::Mesh(Solver* solver, ModelType modelType, const Eigen::Vector3f& color) : modelType(modelType), color(color), solver(solver)
 {
-    localAABB = ComputeLocalAABB(modelType);
     return;
 }
 
@@ -58,8 +59,44 @@ Mesh::~Mesh()
 };
 
 //================================//
+AABB Mesh::GetWorldAABB() const
+{
+    AABB localAABB = solver->GetModelAABB(modelType);
+
+    const Eigen::Vector3f localCenter = 0.5f * (localAABB.min + localAABB.max);
+    const Eigen::Vector3f localExtent = 0.5f * (localAABB.max - localAABB.min);
+
+    const Eigen::Matrix3f rotationMatrix = transform.GetRotation().toRotationMatrix();
+    const Eigen::Matrix3f scaleMatrix = transform.GetScale().asDiagonal();
+    const Eigen::Matrix3f linearTransform = rotationMatrix * scaleMatrix;
+
+    const Eigen::Vector3f worldCenter = transform.TransformPoint(localCenter);
+    const Eigen::Vector3f worldExtent = linearTransform.cwiseAbs() * localExtent;
+
+    return AABB
+    {
+        worldCenter - worldExtent,
+        worldCenter + worldExtent
+    };
+}
+
+//================================//
 namespace GeometryHelpers
 {
+    //================================//
+    void computeModelGeometry(ModelGeometry& outModelGeometry)
+    {
+        outModelGeometry.perModelConvexHulls.clear();
+        outModelGeometry.perModelLocalAABBs.clear();
+
+        for (ModelType modelType : { ModelType_Cube, ModelType_Sphere, ModelType_Pyramid })
+        {
+            outModelGeometry.perModelLocalAABBs[modelType] = ComputeLocalAABB(modelType);
+        }
+
+        return;
+    }
+
     //================================//
     void makeTetVolume(Solver* solver, float ox, float oy, float oz, int nx, int ny, int nz, float cellSize, float E, float nu, const Eigen::Vector3f& color, float particleMass, float friction, bool pinMinX)
     {

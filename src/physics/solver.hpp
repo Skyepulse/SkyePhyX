@@ -123,7 +123,33 @@ public:
     bool emergencyStop = false;
     bool exactHessian  = true;
 
+    //================================//
+    AABB GetModelAABB(ModelType modelType) const
+    {
+        // Fallout to empty AABB if model type is not found
+        auto it = modelGeometry.perModelLocalAABBs.find(modelType);
+        if (it != modelGeometry.perModelLocalAABBs.end())
+        {
+            return it->second;
+        }
+        return AABB{};
+    }
+
+    //================================//
+    ConvexHull GetModelConvexHull(ModelType modelType) const
+    {
+        // Fallout to empty ConvexHull if model type is not found
+        auto it = modelGeometry.perModelConvexHulls.find(modelType);
+        if (it != modelGeometry.perModelConvexHulls.end())
+        {
+            return it->second;
+        }
+        return ConvexHull{};
+    }
+
 private:
+    ModelGeometry modelGeometry{};
+
     std::vector<float> stepTimeAccumulator;
     static constexpr int TIMING_WINDOW = 60;
     std::vector<SolverTimings> timingAccumulator;

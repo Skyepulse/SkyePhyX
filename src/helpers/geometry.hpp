@@ -2,8 +2,11 @@
 #define GEOMETRY_HPP
 
 #include <cmath>
+#include <cstdint>
 #include "math.hpp"
 #include <string>
+#include <vector>
+#include <map>
 
 using Vector6f    = Eigen::Matrix<float, 6, 1>;
 using Matrix6f    = Eigen::Matrix<float, 6, 6>;
@@ -34,6 +37,24 @@ struct Triangle
     uint32_t vertexIndices[3];
 };
 
+struct HullVertex
+{
+    Eigen::Vector3f position = Eigen::Vector3f::Zero();
+};
+
+struct HullFace
+{
+    uint32_t vertexIndices[3] = { 0u, 0u, 0u };
+    Eigen::Vector3f normal = Eigen::Vector3f::Zero();
+    float planeOffset = 0.0f;
+};
+
+struct HullEdge
+{
+    uint32_t vertexIndices[2] = { 0u, 0u };
+    uint32_t faceIndices[2] = { 0u, 0u };
+};
+
 struct AABB
 {
     Eigen::Vector3f min;
@@ -46,6 +67,27 @@ struct AABB
                (min.y() <= other.max.y() && max.y() >= other.min.y()) &&
                (min.z() <= other.max.z() && max.z() >= other.min.z());
     }
+};
+
+struct ConvexHull
+{
+    std::vector<HullVertex> vertices;
+    std::vector<HullFace> faces;
+    std::vector<HullEdge> edges;
+    Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
+
+    uint32_t vertexCount() const { return static_cast<uint32_t>(vertices.size()); }
+    uint32_t faceCount() const { return static_cast<uint32_t>(faces.size()); }
+    uint32_t edgeCount() const { return static_cast<uint32_t>(edges.size()); }
+};
+
+//================================//
+// Used to store constants per different geometry model types.
+// For instance, local AABBS, and Convex Hulls.
+struct ModelGeometry
+{
+    std::map<ModelType, AABB> perModelLocalAABBs;
+    std::map<ModelType, ConvexHull> perModelConvexHulls;
 };
 
 //================================//
@@ -188,7 +230,6 @@ struct Mesh
 
     // ---- Miscellaneous ----
     bool isInvisible = false;
-    AABB localAABB; // localSpace AABB
 
     // ---- Mass properties ----
     float mass      = 0.0f;
@@ -279,24 +320,7 @@ struct Mesh
     }
 
     //================================//
-    AABB GetWorldAABB() const
-    {
-        const Eigen::Vector3f localCenter = 0.5f * (localAABB.min + localAABB.max);
-        const Eigen::Vector3f localExtent = 0.5f * (localAABB.max - localAABB.min);
-
-        const Eigen::Matrix3f rotationMatrix = transform.GetRotation().toRotationMatrix();
-        const Eigen::Matrix3f scaleMatrix = transform.GetScale().asDiagonal();
-        const Eigen::Matrix3f linearTransform = rotationMatrix * scaleMatrix;
-
-        const Eigen::Vector3f worldCenter = transform.TransformPoint(localCenter);
-        const Eigen::Vector3f worldExtent = linearTransform.cwiseAbs() * localExtent;
-
-        return AABB
-        {
-            worldCenter - worldExtent,
-            worldCenter + worldExtent
-        };
-    }
+    AABB GetWorldAABB() const;
 };
 
 //================================//
@@ -304,6 +328,9 @@ struct Mesh
 //================================//
 namespace GeometryHelpers
 {
+    //================================//
+    void computeModelGeometry(ModelGeometry& outModelGeometry);
+
     //================================//
     void makeTet(Solver* solver, float cx, float cy, float cz, float edge, float E, float nu, const Eigen::Vector3f& color, float mass = 1.0f, float friction = 0.5f);
 
