@@ -1,7 +1,13 @@
+
 #include "geometry.hpp"
 #include "../physics/solver.hpp"
 
 #include <libqhullcpp/Qhull.h>
+#include <libqhullcpp/QhullVertexSet.h>
+
+#include <limits>
+#include <map>
+#include <unordered_map>
 
 //================================//
 static AABB ComputeLocalAABB(ModelType modelType)
@@ -34,6 +40,149 @@ static AABB ComputeLocalAABB(ModelType modelType)
     aabb.max = max;
 
     return aabb;
+}
+
+//================================//
+static ConvexHull ComputeConvexHull(const MeshData& meshData)
+{
+    ConvexHull hull;
+
+    if (meshData.vertices.empty())
+        return hull;
+
+    std::vector<Eigen::Vector3f> uniquePositions;
+    uniquePositions.reserve(meshData.vertices.size());
+
+    for (const Vertex& vertex : meshData.vertices)
+    {
+        bool alreadyPresent = false;
+        for (const Eigen::Vector3f& existingPosition : uniquePositions)
+        {
+            if (existingPosition.isApprox(vertex.position, 1e-6f))
+            {
+                alreadyPresent = true;
+                break;
+            }
+        }
+
+        if (!alreadyPresent)
+            uniquePositions.push_back(vertex.position);
+    }
+
+    if (uniquePositions.size() < 4)
+        return hull;
+
+    std::vector<double> pointCoordinates;
+    pointCoordinates.reserve(uniquePositions.size() * 3);
+    for (const Eigen::Vector3f& position : uniquePositions)
+    {
+        pointCoordinates.push_back(static_cast<double>(position.x()));
+        pointCoordinates.push_back(static_cast<double>(position.y()));
+        pointCoordinates.push_back(static_cast<double>(position.z()));
+    }
+
+    orgQhull::Qhull qhull;
+    qhull.runQhull("", 3, static_cast<int>(uniquePositions.size()), pointCoordinates.data(), "Qt");
+
+    std::unordered_map<uint32_t, uint32_t> qhullVertexIdToHullIndex;
+    hull.vertices.reserve(static_cast<size_t>(qhull.vertexCount()));
+
+    for (orgQhull::QhullVertex vertex = qhull.beginVertex(); vertex != qhull.endVertex(); vertex = vertex.next())
+    {
+        const orgQhull::QhullPoint point = vertex.point();
+
+        HullVertex hullVertex;
+        hullVertex.position = Eigen::Vector3f(
+            static_cast<float>(point[0]),
+            static_cast<float>(point[1]),
+            static_cast<float>(point[2])
+        );
+
+        const uint32_t hullVertexIndex = static_cast<uint32_t>(hull.vertices.size());
+        qhullVertexIdToHullIndex[static_cast<uint32_t>(vertex.id())] = hullVertexIndex;
+        hull.vertices.push_back(hullVertex);
+        hull.centroid += hullVertex.position;
+    }
+
+    if (!hull.vertices.empty())
+        hull.centroid /= static_cast<float>(hull.vertices.size());
+
+    std::map<std::pair<uint32_t, uint32_t>, HullEdge> edgeMap;
+
+    for (orgQhull::QhullFacet facet = qhull.beginFacet(); facet != qhull.endFacet(); facet = facet.next())
+    {
+        if (!facet.isGood())
+            continue;
+
+        const std::vector<orgQhull::QhullVertex> facetVertices = facet.vertices().toStdVector();
+        if (facetVertices.size() != 3)
+            continue;
+
+        HullFace face;
+        for (int i = 0; i < 3; ++i)
+        {
+            const uint32_t qhullVertexId = static_cast<uint32_t>(facetVertices[i].id());
+            auto vertexIt = qhullVertexIdToHullIndex.find(qhullVertexId);
+            if (vertexIt == qhullVertexIdToHullIndex.end())
+                return ConvexHull{};
+
+            face.vertexIndices[i] = vertexIt->second;
+        }
+
+        const orgQhull::QhullHyperplane hyperplane = facet.hyperplane();
+        face.normal = Eigen::Vector3f(
+            static_cast<float>(hyperplane[0]),
+            static_cast<float>(hyperplane[1]),
+            static_cast<float>(hyperplane[2])
+        );
+
+        const Eigen::Vector3f& p0 = hull.vertices[face.vertexIndices[0]].position;
+        const Eigen::Vector3f& p1 = hull.vertices[face.vertexIndices[1]].position;
+        const Eigen::Vector3f& p2 = hull.vertices[face.vertexIndices[2]].position;
+
+        Eigen::Vector3f geometricNormal = (p1 - p0).cross(p2 - p0);
+        if (geometricNormal.squaredNorm() <= 1e-12f)
+            continue;
+
+        if (geometricNormal.dot(face.normal) < 0.0f)
+            std::swap(face.vertexIndices[1], face.vertexIndices[2]);
+
+        face.planeOffset = face.normal.dot(hull.vertices[face.vertexIndices[0]].position);
+
+        const uint32_t faceIndex = static_cast<uint32_t>(hull.faces.size());
+        hull.faces.push_back(face);
+
+        for (int edgeIndex = 0; edgeIndex < 3; ++edgeIndex)
+        {
+            const uint32_t a = face.vertexIndices[edgeIndex];
+            const uint32_t b = face.vertexIndices[(edgeIndex + 1) % 3];
+            const std::pair<uint32_t, uint32_t> edgeKey = (a < b)
+                ? std::make_pair(a, b)
+                : std::make_pair(b, a);
+
+            auto [edgeIt, inserted] = edgeMap.emplace(edgeKey, HullEdge{});
+            if (inserted)
+            {
+                edgeIt->second.vertexIndices[0] = edgeKey.first;
+                edgeIt->second.vertexIndices[1] = edgeKey.second;
+                edgeIt->second.faceIndices[0] = faceIndex;
+                edgeIt->second.faceIndices[1] = faceIndex;
+            }
+            else
+            {
+                edgeIt->second.faceIndices[1] = faceIndex;
+            }
+        }
+    }
+
+    hull.edges.reserve(edgeMap.size());
+    for (const auto& [edgeKey, edge] : edgeMap)
+    {
+        (void)edgeKey;
+        hull.edges.push_back(edge);
+    }
+
+    return hull;
 }
 
 //================================//
@@ -93,7 +242,10 @@ namespace GeometryHelpers
         for (ModelType modelType : { ModelType_Cube, ModelType_Sphere, ModelType_Pyramid })
         {
             outModelGeometry.perModelLocalAABBs[modelType] = ComputeLocalAABB(modelType);
-            outModelGeometry.perModelMeshData[modelType] = GeometryGenerator::GenerateMeshDataForModelType(modelType);
+            MeshData meshData = GeometryGenerator::GenerateMeshDataForModelType(modelType);
+            outModelGeometry.perModelMeshData[modelType] = meshData;
+
+            outModelGeometry.perModelConvexHulls[modelType] = ComputeConvexHull(meshData);
         }
 
         return;
