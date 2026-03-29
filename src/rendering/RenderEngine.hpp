@@ -139,11 +139,11 @@ public:
     void Initialize();
     void AcquireSwapchainTexture();
     void Render(void* userData);
-    void UpdateInstanceBuffer(std::vector<Mesh*>& meshes);
-    void UpdateLineBuffer(const std::vector<GPULineData>& lineData);
-    void UpdateDebugPointBuffer(const std::vector<GPUDebugPointData>& debugPointData);
-    void UpdateSoftBodySurfaceBuffer(const std::vector<GPUSoftBodyVertex>& data);
-    void SetSolverStepTime(float time) { this->solverStepTimeMs = time; }
+    void UpdateInstanceBuffer();
+    void UpdateLineBuffer();
+    void UpdateDebugPointBuffer();
+    void UpdateSoftBodySurfaceBuffer();
+    void SetSolverStepTime();
 
     //================================//
     Camera* GetCamera() { return this->camera.get(); }

@@ -214,6 +214,12 @@ void RenderEngine::AcquireSwapchainTexture()
 }
 
 //================================//
+void RenderEngine::SetSolverStepTime()
+{
+    this->solverStepTimeMs = this->solver->averageStepTime;
+}
+
+//================================//
 void RenderEngine::Render(void* userData)
 {
     auto renderInfo = *static_cast<RenderInfo*>(userData);
@@ -1008,8 +1014,10 @@ void RenderEngine::BuildBuffers()
 }
 
 //================================//
-void RenderEngine::UpdateDebugPointBuffer(const std::vector<GPUDebugPointData>& pointsData)
+void RenderEngine::UpdateDebugPointBuffer()
 {   
+    const std::vector<GPUDebugPointData>& pointsData = this->solver->debugPointData;
+
     if (pointsData.size() > this->maxDebugPoints)
     {
         this->maxDebugPoints = pointsData.size() * 2;
@@ -1053,8 +1061,10 @@ void RenderEngine::UpdateDebugPointBuffer(const std::vector<GPUDebugPointData>& 
 }
 
 //================================//
-void RenderEngine::UpdateLineBuffer(const std::vector<GPULineData>& lineData)
+void RenderEngine::UpdateLineBuffer()
 {
+    const std::vector<GPULineData>& lineData = this->solver->lineData;
+
     if (lineData.size() > this->maxLines)
     {
         this->maxLines = this->maxLines * 2;
@@ -1079,8 +1089,10 @@ void RenderEngine::UpdateLineBuffer(const std::vector<GPULineData>& lineData)
 }
 
 //================================//
-void RenderEngine::UpdateSoftBodySurfaceBuffer(const std::vector<GPUSoftBodyVertex>& data)
+void RenderEngine::UpdateSoftBodySurfaceBuffer()
 {
+    const std::vector<GPUSoftBodyVertex>& data = this->solver->softBodySurfaceData;
+
     if (data.size() > this->maxSoftBodyVertices)
     {
         this->maxSoftBodyVertices = data.size() * 2;
@@ -1105,8 +1117,10 @@ void RenderEngine::UpdateSoftBodySurfaceBuffer(const std::vector<GPUSoftBodyVert
 }
 
 //================================//
-void RenderEngine::UpdateInstanceBuffer(std::vector<Mesh*>& bodies)
+void RenderEngine::UpdateInstanceBuffer()
 {
+    const std::vector<Mesh*>& bodies = this->solver->bodyPtrs;
+
     for (auto& [modelType, batch] : this->modelBatches)
     {
         batch.cpuInstances.clear();

@@ -18,26 +18,6 @@ struct Force;
 struct Energy;
 
 //================================//
-enum ModelType
-{
-    ModelType_Cube = 0,
-    ModelType_Sphere = 1,
-    ModelType_Pyramid = 2
-};
-
-//================================//
-struct Vertex
-{
-    Eigen::Vector3f position;
-    Eigen::Vector3f normal;
-    Eigen::Vector2f uv;
-};
-
-struct Triangle
-{
-    uint32_t vertexIndices[3];
-};
-
 struct HullVertex
 {
     Eigen::Vector3f position = Eigen::Vector3f::Zero();

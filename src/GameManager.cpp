@@ -85,15 +85,15 @@ void GameManager::TickFrame()
     this->renderEngine->AcquireSwapchainTexture();
 
     auto t1 = Clock::now();
-    this->renderEngine->SetSolverStepTime(this->solver->averageStepTime);
-    this->renderEngine->UpdateInstanceBuffer(this->solver->bodyPtrs);
+    this->renderEngine->SetSolverStepTime();
+    this->renderEngine->UpdateInstanceBuffer();
 
     auto t2 = Clock::now();
-    this->renderEngine->UpdateLineBuffer(this->solver->lineData);
-    this->renderEngine->UpdateSoftBodySurfaceBuffer(this->solver->softBodySurfaceData);
+    this->renderEngine->UpdateLineBuffer();
+    this->renderEngine->UpdateSoftBodySurfaceBuffer();
 
     auto t3 = Clock::now();
-    this->renderEngine->UpdateDebugPointBuffer(this->solver->debugPointData);
+    this->renderEngine->UpdateDebugPointBuffer();
 
     auto t4 = Clock::now();
     this->renderEngine->Render(static_cast<void*>(&this->renderInfo));

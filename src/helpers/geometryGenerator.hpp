@@ -1,7 +1,6 @@
 #ifndef GEOMETRYGENERATOR_HPP
 #define GEOMETRYGENERATOR_HPP
 
-#include "geometry.hpp"
 #include <vector>
 #include <cmath>
 
@@ -10,6 +9,26 @@ constexpr double M_PI = 3.14159265358979323846;
 #endif
 
 //================================//
+enum ModelType
+{
+    ModelType_Cube = 0,
+    ModelType_Sphere = 1,
+    ModelType_Pyramid = 2
+};
+
+//================================//
+struct Vertex
+{
+    Eigen::Vector3f position;
+    Eigen::Vector3f normal;
+    Eigen::Vector2f uv;
+};
+
+struct Triangle
+{
+    uint32_t vertexIndices[3];
+};
+
 struct MeshData
 {
     std::vector<Vertex>   vertices;
@@ -22,20 +41,6 @@ struct MeshData
 //================================//
 namespace GeometryGenerator
 {
-    //================================//
-    inline MeshData GenerateMeshDataForModelType(ModelType modelType)
-    {
-        switch (modelType)
-        {
-            case ModelType_Cube:
-                return GenerateCube();
-            case ModelType_Sphere:
-                return GenerateSphere(32, 16);
-            default:
-                return MeshData{};
-        }
-    }
-    
     //================================//
     inline MeshData GenerateCube()
     {
@@ -126,6 +131,20 @@ namespace GeometryGenerator
         }
 
         return mesh;
+    }
+
+    //================================//
+    inline MeshData GenerateMeshDataForModelType(ModelType modelType)
+    {
+        switch (modelType)
+        {
+            case ModelType_Cube:
+                return GenerateCube();
+            case ModelType_Sphere:
+                return GenerateSphere(32, 16);
+            default:
+                return MeshData{};
+        }
     }
 }
 
