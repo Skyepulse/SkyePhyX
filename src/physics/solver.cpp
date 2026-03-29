@@ -162,6 +162,9 @@ Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const 
                 break;
             case ModelType_Sphere:
                 newMesh->mass = density * (4.0f / 3.0f) * M_PI * r * r * r;
+                
+                // ensure uniform scaling
+                newMesh->transform.SetScale(Eigen::Vector3f(scale.x(), scale.x(), scale.x()));
                 I = Eigen::Vector3f::Constant((2.0f / 5.0f) * newMesh->mass * r * r);
                 break;
             default:

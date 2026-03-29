@@ -13,6 +13,15 @@ static std::vector<Mesh*> FilterNulls(std::initializer_list<Mesh*> bodies)
 }
 
 //================================//
+static Eigen::Vector3f GetWorldContactOffset(const Mesh* body, const Eigen::Matrix3f& rotation, const Eigen::Vector3f& storedOffset)
+{
+    if (body->modelType == ModelType_Sphere)
+        return storedOffset;
+
+    return rotation * storedOffset;
+}
+
+//================================//
 Manifold::Manifold(Solver* solver, Mesh* bodyA, Mesh* bodyB)
     : Force(solver, FilterNulls({bodyA, bodyB}), NUM_CONSTRAINTS), bodyA(bodyA), bodyB(bodyB)
 {
@@ -121,8 +130,8 @@ bool Manifold::Initialize()
         Eigen::Vector3f t2 = n.cross(t1);
 
 
-        Eigen::Vector3f rAw = rotA * contactPoints[i].rA;
-        Eigen::Vector3f rBw = rotB * contactPoints[i].rB;
+        Eigen::Vector3f rAw = GetWorldContactOffset(bodyA, rotA, contactPoints[i].rA);
+        Eigen::Vector3f rBw = GetWorldContactOffset(bodyB, rotB, contactPoints[i].rB);
 
         // ---- Jacobians ----
         //
@@ -287,14 +296,14 @@ void Manifold::AddDebugPointData(std::vector<GPUDebugPointData>& data) const
     for (int i = 0; i < numContactPoints; i++)
     {
         GPUDebugPointData point;
-        Eigen::Vector3f worldA = posA + qA.toRotationMatrix() * contactPoints[i].rA;
+        Eigen::Vector3f worldA = posA + GetWorldContactOffset(bodyA, qA.toRotationMatrix(), contactPoints[i].rA);
         Eigen::Map<Eigen::Vector3f>(point.position) = worldA;
         point.color[0] = 1.f; point.color[1] = 1.f;
         point.color[2] = 0.f; point.color[3] = 1.f;
         data.push_back(point);
 
         GPUDebugPointData pointB;
-        Eigen::Vector3f worldB = posB + qB.toRotationMatrix() * contactPoints[i].rB;
+        Eigen::Vector3f worldB = posB + GetWorldContactOffset(bodyB, qB.toRotationMatrix(), contactPoints[i].rB);
         Eigen::Map<Eigen::Vector3f>(pointB.position) = worldB;
         pointB.color[0] = 0.f; pointB.color[1] = 1.f;
         pointB.color[2] = 1.f; pointB.color[3] = 1.f;

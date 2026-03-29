@@ -713,7 +713,7 @@ static void Spheres(Solver* solver, Camera* camera, const LevelParameters& param
                 );
 
                 Mesh* block = solver->AddBody(
-                    ModelType_Sphere, 1.0f, 0.5f,
+                    ModelType_Sphere, 1.0f, 0.0f,
                     pos, commonScale,
                     Eigen::Vector3f(0.0f, 0.0f, 0.0f),
                     Quaternionf::Identity(),
