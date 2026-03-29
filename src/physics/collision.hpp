@@ -44,6 +44,10 @@ struct CollisionResult
 //================================//
 namespace CollisionSpace
 {
+    void ClosestPointsOnSegments(const Eigen::Vector3f& a0, const Eigen::Vector3f& a1,
+                                 const Eigen::Vector3f& b0, const Eigen::Vector3f& b1,
+                                 Eigen::Vector3f& pointA, Eigen::Vector3f& pointB);
+                                 
     CollisionResult CollisionMeshMesh(const Mesh* A, const Mesh* B);
     CollisionResult CollisionBoxBox(const Mesh* A, const Mesh* B);
     CollisionResult CollisionHullHull(const Mesh* A, const Mesh* B);
