@@ -730,6 +730,106 @@ static void Spheres(Solver* solver, Camera* camera, const LevelParameters& param
 }
 
 //================================//
+static void TestConvexMeshShowcase(Solver* solver, Camera* camera, const LevelParameters& params)
+{
+    Mesh* ground = solver->AddBody(
+        ModelType_Cube, 1.0f, 0.6f,
+        Eigen::Vector3f(0.0f, -10.0f, 0.0f),
+        Eigen::Vector3f(34.0f, 1.0f, 18.0f),
+        Eigen::Vector3f::Zero(),
+        Quaternionf::Identity(),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.82f, 0.84f, 0.88f)
+    );
+    ground->name = "Ground";
+
+    auto makeRotation = [](float degX, float degY, float degZ)
+    {
+        return Eigen::AngleAxisf(degY * (float)M_PI / 180.0f, Eigen::Vector3f::UnitY()) *
+               Eigen::AngleAxisf(degX * (float)M_PI / 180.0f, Eigen::Vector3f::UnitX()) *
+               Eigen::AngleAxisf(degZ * (float)M_PI / 180.0f, Eigen::Vector3f::UnitZ());
+    };
+
+    const float groundTop = -9.5f;
+
+    Mesh* leftBox = solver->AddBody(
+        ModelType_Cube, 1.0f, 0.6f,
+        Eigen::Vector3f(-10.0f, groundTop + 1.1f, 0.0f),
+        Eigen::Vector3f(3.2f, 2.2f, 3.2f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(0.0f, 18.0f, 0.0f),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.35f, 0.42f, 0.48f)
+    );
+    leftBox->name = "ConvexPedestal";
+
+    Mesh* convexOnBox = solver->AddBody(
+        ModelType_TestConvexMesh, 1.0f, 0.55f,
+        Eigen::Vector3f(-10.0f, groundTop + 5.6f, 0.0f),
+        Eigen::Vector3f(2.6f, 2.6f, 2.6f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(20.0f, -28.0f, 12.0f),
+        Eigen::Vector3f(0.0f, 1.1f, 0.0f),
+        false,
+        Eigen::Vector3f(0.95f, 0.55f, 0.22f)
+    );
+    convexOnBox->name = "ConvexVsBox";
+
+    Mesh* baseConvex = solver->AddBody(
+        ModelType_TestConvexMesh, 1.0f, 0.55f,
+        Eigen::Vector3f(0.0f, groundTop + 1.55f, 0.0f),
+        Eigen::Vector3f(3.0f, 3.0f, 3.0f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(0.0f, 14.0f, 0.0f),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.25f, 0.62f, 0.88f)
+    );
+    baseConvex->name = "ConvexBase";
+
+    Mesh* fallingConvex = solver->AddBody(
+        ModelType_TestConvexMesh, 1.0f, 0.5f,
+        Eigen::Vector3f(0.2f, groundTop + 6.2f, 0.1f),
+        Eigen::Vector3f(2.4f, 2.4f, 2.4f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(30.0f, -22.0f, -18.0f),
+        Eigen::Vector3f(1.4f, -0.4f, 0.8f),
+        false,
+        Eigen::Vector3f(0.92f, 0.24f, 0.32f)
+    );
+    fallingConvex->name = "ConvexVsConvex";
+
+    Mesh* rightConvex = solver->AddBody(
+        ModelType_TestConvexMesh, 1.0f, 0.45f,
+        Eigen::Vector3f(10.0f, groundTop + 1.7f, 0.0f),
+        Eigen::Vector3f(3.2f, 3.2f, 3.2f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(12.0f, 35.0f, -10.0f),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.28f, 0.78f, 0.55f)
+    );
+    rightConvex->name = "SphereTargetConvex";
+
+    Mesh* sphere = solver->AddBody(
+        ModelType_Sphere, 1.0f, 0.35f,
+        Eigen::Vector3f(14.0f, groundTop + 5.0f, 0.0f),
+        Eigen::Vector3f(2.2f, 2.2f, 2.2f),
+        Eigen::Vector3f(-4.5f, 0.0f, 0.0f),
+        Quaternionf::Identity(),
+        Eigen::Vector3f(0.0f, 0.0f, 4.5f),
+        false,
+        Eigen::Vector3f(0.92f, 0.90f, 0.35f)
+    );
+    sphere->name = "SphereVsConvex";
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, -1.5f, 34.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, -0.03f, -1.0f).normalized());
+}
+
+//================================//
 static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
 {
     DefaultScene,
@@ -744,7 +844,8 @@ static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
     ClothSimulation,
     SafetyNet,
     Particles,
-    Spheres
+    Spheres,
+    TestConvexMeshShowcase
 };
 
 //================================//
@@ -761,9 +862,10 @@ static const char* names[] = {
     "ClothSimulation",
     "SafetyNet",
     "Particles",
-    "Spheres"
+    "Spheres",
+    "TestConvexMeshShowcase"
 };
 
-static const int numLevels = 13;
+static const int numLevels = 14;
 
 #endif // levels.h

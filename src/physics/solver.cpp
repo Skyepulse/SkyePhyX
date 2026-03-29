@@ -169,6 +169,8 @@ Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const 
                 break;
             default:
                 newMesh->mass = density * scale.x() * scale.y() * scale.z();
+                I = (newMesh->mass / 12.0f) * Eigen::Vector3f(sy2 + sz2, sx2 + sz2, sx2 + sy2);
+                break;
         }
 
         newMesh->inertiaTensorBody = I.asDiagonal();

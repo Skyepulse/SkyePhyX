@@ -98,26 +98,23 @@ namespace
 }
 
 //================================//
-static AABB ComputeLocalAABB(ModelType modelType)
+static AABB ComputeLocalAABB(const MeshData& meshData)
 {
     AABB aabb;
+    if (meshData.vertices.empty())
+    {
+        aabb.min = Eigen::Vector3f::Zero();
+        aabb.max = Eigen::Vector3f::Zero();
+        return aabb;
+    }
+
     Eigen::Vector3f min = Eigen::Vector3f::Constant(std::numeric_limits<float>::max());
     Eigen::Vector3f max = Eigen::Vector3f::Constant(std::numeric_limits<float>::lowest());
 
-    switch (modelType)
+    for (const Vertex& vertex : meshData.vertices)
     {
-        case ModelType_Cube:
-            min = Eigen::Vector3f(-0.5f, -0.5f, -0.5f);
-            max = Eigen::Vector3f( 0.5f,  0.5f,  0.5f);
-            break;
-        case ModelType_Sphere:
-            min = Eigen::Vector3f(-0.5f, -0.5f, -0.5f);
-            max = Eigen::Vector3f( 0.5f,  0.5f,  0.5f);
-            break;
-        case ModelType_Pyramid:
-            min = Eigen::Vector3f(-0.5f, -0.5f, -0.5f);
-            max = Eigen::Vector3f( 0.5f,  0.5f,  0.5f);
-            break;
+        min = min.cwiseMin(vertex.position);
+        max = max.cwiseMax(vertex.position);
     }
 
     // Inflate a little bit the AABB
@@ -367,12 +364,11 @@ namespace GeometryHelpers
         outModelGeometry.perModelLocalAABBs.clear();
         outModelGeometry.perModelMeshData.clear();
 
-        for (ModelType modelType : { ModelType_Cube, ModelType_Sphere, ModelType_Pyramid })
+        for (ModelType modelType : { ModelType_Cube, ModelType_Sphere, ModelType_TestConvexMesh })
         {
-            outModelGeometry.perModelLocalAABBs[modelType] = ComputeLocalAABB(modelType);
             MeshData meshData = GeometryGenerator::GenerateMeshDataForModelType(modelType);
             outModelGeometry.perModelMeshData[modelType] = meshData;
-
+            outModelGeometry.perModelLocalAABBs[modelType] = ComputeLocalAABB(meshData);
             outModelGeometry.perModelConvexHulls[modelType] = ComputeConvexHull(meshData);
         }
 

@@ -1,6 +1,8 @@
 #ifndef GEOMETRYGENERATOR_HPP
 #define GEOMETRYGENERATOR_HPP
 
+#include <algorithm>
+#include <array>
 #include <vector>
 #include <cmath>
 
@@ -13,7 +15,7 @@ enum ModelType
 {
     ModelType_Cube = 0,
     ModelType_Sphere = 1,
-    ModelType_Pyramid = 2
+    ModelType_TestConvexMesh = 2
 };
 
 //================================//
@@ -134,6 +136,85 @@ namespace GeometryGenerator
     }
 
     //================================//
+    inline MeshData GenerateTestConvexMesh()
+    {
+        MeshData mesh;
+
+        const std::array<Eigen::Vector2f, 6> profile =
+        {{
+            { -0.45f, -0.50f },
+            {  0.18f, -0.50f },
+            {  0.50f, -0.12f },
+            {  0.36f,  0.50f },
+            { -0.18f,  0.50f },
+            { -0.50f,  0.10f }
+        }};
+
+        const float halfDepth = 0.35f;
+
+        auto appendFace = [&](const std::vector<Eigen::Vector3f>& positions, const Eigen::Vector3f& normal)
+        {
+            if (positions.size() < 3)
+                return;
+
+            const uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
+            for (size_t i = 0; i < positions.size(); ++i)
+            {
+                Vertex vertex;
+                vertex.position = positions[i];
+                vertex.normal = normal;
+                vertex.uv = Eigen::Vector2f(
+                    (positions[i].x() + 0.5f),
+                    (positions[i].y() + 0.5f)
+                );
+                mesh.vertices.push_back(vertex);
+            }
+
+            for (uint32_t i = 1; i + 1 < positions.size(); ++i)
+            {
+                mesh.indices.push_back(base);
+                mesh.indices.push_back(base + i);
+                mesh.indices.push_back(base + i + 1);
+            }
+        };
+
+        std::vector<Eigen::Vector3f> frontFace;
+        std::vector<Eigen::Vector3f> backFace;
+        frontFace.reserve(profile.size());
+        backFace.reserve(profile.size());
+
+        for (const Eigen::Vector2f& point : profile)
+        {
+            frontFace.push_back(Eigen::Vector3f(point.x(), point.y(), halfDepth));
+            backFace.push_back(Eigen::Vector3f(point.x(), point.y(), -halfDepth));
+        }
+
+        appendFace(frontFace, Eigen::Vector3f(0.0f, 0.0f, 1.0f));
+        std::reverse(backFace.begin(), backFace.end());
+        appendFace(backFace, Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+
+        for (size_t i = 0; i < profile.size(); ++i)
+        {
+            const size_t j = (i + 1) % profile.size();
+            const Eigen::Vector2f edge = profile[j] - profile[i];
+            Eigen::Vector3f sideNormal(edge.y(), -edge.x(), 0.0f);
+            sideNormal.normalize();
+
+            appendFace(
+                {
+                    Eigen::Vector3f(profile[i].x(), profile[i].y(),  halfDepth),
+                    Eigen::Vector3f(profile[i].x(), profile[i].y(), -halfDepth),
+                    Eigen::Vector3f(profile[j].x(), profile[j].y(), -halfDepth),
+                    Eigen::Vector3f(profile[j].x(), profile[j].y(),  halfDepth)
+                },
+                sideNormal
+            );
+        }
+
+        return mesh;
+    }
+
+    //================================//
     inline MeshData GenerateMeshDataForModelType(ModelType modelType)
     {
         switch (modelType)
@@ -142,6 +223,8 @@ namespace GeometryGenerator
                 return GenerateCube();
             case ModelType_Sphere:
                 return GenerateSphere(32, 16);
+            case ModelType_TestConvexMesh:
+                return GenerateTestConvexMesh();
             default:
                 return MeshData{};
         }
