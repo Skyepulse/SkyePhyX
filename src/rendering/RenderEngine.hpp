@@ -10,7 +10,6 @@
 #include "../utils/wgpuHelpers.hpp"
 #include "../helpers/camera.hpp"
 #include "../helpers/geometry.hpp"
-#include "../helpers/geometryGenerator.hpp"
 
 // forward declaration
 class RenderEngine;

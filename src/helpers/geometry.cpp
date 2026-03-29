@@ -88,10 +88,12 @@ namespace GeometryHelpers
     {
         outModelGeometry.perModelConvexHulls.clear();
         outModelGeometry.perModelLocalAABBs.clear();
+        outModelGeometry.perModelMeshData.clear();
 
         for (ModelType modelType : { ModelType_Cube, ModelType_Sphere, ModelType_Pyramid })
         {
             outModelGeometry.perModelLocalAABBs[modelType] = ComputeLocalAABB(modelType);
+            outModelGeometry.perModelMeshData[modelType] = GeometryGenerator::GenerateMeshDataForModelType(modelType);
         }
 
         return;

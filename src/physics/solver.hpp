@@ -147,6 +147,18 @@ public:
         return ConvexHull{};
     }
 
+    //================================//
+    MeshData GetModelMeshData(ModelType modelType) const
+    {
+        // Fallout to empty MeshData if model type is not found
+        auto it = modelGeometry.perModelMeshData.find(modelType);
+        if (it != modelGeometry.perModelMeshData.end())
+        {
+            return it->second;
+        }
+        return MeshData{};
+    }
+
 private:
     ModelGeometry modelGeometry{};
 

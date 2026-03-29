@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include "geometryGenerator.hpp"
 
 using Vector6f    = Eigen::Matrix<float, 6, 1>;
 using Matrix6f    = Eigen::Matrix<float, 6, 6>;
@@ -88,6 +89,7 @@ struct ModelGeometry
 {
     std::map<ModelType, AABB> perModelLocalAABBs;
     std::map<ModelType, ConvexHull> perModelConvexHulls;
+    std::map<ModelType, MeshData> perModelMeshData;
 };
 
 //================================//

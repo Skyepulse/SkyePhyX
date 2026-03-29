@@ -23,6 +23,20 @@ struct MeshData
 namespace GeometryGenerator
 {
     //================================//
+    inline MeshData GenerateMeshDataForModelType(ModelType modelType)
+    {
+        switch (modelType)
+        {
+            case ModelType_Cube:
+                return GenerateCube();
+            case ModelType_Sphere:
+                return GenerateSphere(32, 16);
+            default:
+                return MeshData{};
+        }
+    }
+    
+    //================================//
     inline MeshData GenerateCube()
     {
         MeshData mesh;
