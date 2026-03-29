@@ -54,7 +54,7 @@ bool Manifold::Initialize()
     }
 
     // Collision detection
-    CollisionResult collision = CollisionSpace::CollisionBoxBox(bodyA, bodyB);
+    CollisionResult collision = CollisionSpace::CollisionHullHull(bodyA, bodyB);
     numContactPoints = collision.numContacts;
     if (numContactPoints == 0)
         return false;

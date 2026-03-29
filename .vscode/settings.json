@@ -1,3 +1,11 @@
 {
-    "cmake.generator": "Visual Studio 17 2022"
+    "cmake.generator": "Visual Studio 17 2022",
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/bower_components": true,
+        "**/*.code-search": true,
+        "**/build": true,
+        "**/build-web": true,
+        "**/dawn": true,
+    },
 }

@@ -179,6 +179,18 @@ static ConvexHull ComputeConvexHull(const MeshData& meshData)
     for (const auto& [edgeKey, edge] : edgeMap)
     {
         (void)edgeKey;
+
+        if (edge.faceIndices[0] >= hull.faces.size() || edge.faceIndices[1] >= hull.faces.size())
+            continue;
+
+        const Eigen::Vector3f& normal0 = hull.faces[edge.faceIndices[0]].normal;
+        const Eigen::Vector3f& normal1 = hull.faces[edge.faceIndices[1]].normal;
+
+        // Ignore triangulation diagonals: they are shared by coplanar triangles,
+        // but they are not real convex-polyhedron feature edges.
+        if (normal0.dot(normal1) > 1.0f - 1e-4f)
+            continue;
+
         hull.edges.push_back(edge);
     }
 

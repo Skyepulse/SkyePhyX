@@ -2,446 +2,490 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <limits>
+#include "solver.hpp"
 
 //================================//
 namespace CollisionSpace
 {
-    enum AxisType { FACE_A = 0, FACE_B = 1, EDGE = 2 };
+    static constexpr float FACE_CONTACT_EDGE_BIAS = 0.005f;
 
     //================================//
-    struct SATResult
+    static Eigen::Vector3f TransformNormalToWorld(const Transform& transform, const Eigen::Vector3f& localNormal)
     {
-        AxisType axisType;
+        const Eigen::Matrix3f linear = transform.GetRotation().toRotationMatrix() * transform.GetScale().asDiagonal();
+        Eigen::Vector3f worldNormal = linear.inverse().transpose() * localNormal;
+        const float lengthSq = worldNormal.squaredNorm();
+        if (lengthSq <= 1e-12f)
+            return Eigen::Vector3f::Zero();
 
-        int AxisA;
-        int AxisB;
-
-        float sign;
-        float penetration;
-
-        Eigen::Vector3f normal; // points A -> B
-    };
-
-    //================================//
-    uint32_t createID(AxisType axisType, int axisA, int axisB, int vertexIndex)
-    {
-        return (static_cast<uint32_t>(axisType) & 0x3)
-             | ((static_cast<uint32_t>(axisA) & 0x7) << 2)
-             | ((static_cast<uint32_t>(axisB) & 0x7) << 5)
-             | ((static_cast<uint32_t>(vertexIndex) & 0xF) << 8);
+        return worldNormal / std::sqrt(lengthSq);
     }
 
     //================================//
-    // (Vertices in CCW order)
-    void GetBoxVerticesWorld(const Eigen::Vector3f& position, const Eigen::Vector3f& halfs, const Eigen::Matrix3f& rot, int faceAxis, float faceSign, Eigen::Vector3f outVertices[4])
+    static Eigen::Vector3f ToLocalOffset(const Transform& transform, const Eigen::Vector3f& worldPoint)
     {
-        int u = (faceAxis + 1) % 3;
-        int v = (faceAxis + 2) % 3;
+        return transform.GetRotation().toRotationMatrix().transpose() * (worldPoint - transform.GetPosition());
+    }
 
-        Eigen::Vector3f faceCenter = position + rot.col(faceAxis) * (faceSign * halfs[faceAxis]);
-        Eigen::Vector3f uVec = rot.col(u) * (halfs[u]);
-        Eigen::Vector3f vVec = rot.col(v) * (halfs[v]);
+    //================================//
+    static bool IsMinkowskiFace(Eigen::Vector3f normalA0, Eigen::Vector3f normalA1, const Eigen::Vector3f& edgeDirectionA,
+                                Eigen::Vector3f normalB0, Eigen::Vector3f normalB1, const Eigen::Vector3f& edgeDirectionB)
+    {
+        if ((normalA1.cross(normalA0)).dot(edgeDirectionA) < 0.0f)
+            std::swap(normalA0, normalA1);
 
-        if (faceSign > 0)
+        if ((normalB1.cross(normalB0)).dot(edgeDirectionB) < 0.0f)
+            std::swap(normalB0, normalB1);
+
+        const float cba = normalB0.dot(normalA1.cross(normalA0));
+        const float dba = normalB1.dot(normalA1.cross(normalA0));
+        const float adc = normalA0.dot(normalB1.cross(normalB0));
+        const float bdc = normalA1.dot(normalB1.cross(normalB0));
+
+        return (cba * dba < 0.0f) &&
+               (adc * bdc < 0.0f) &&
+               (cba * bdc > 0.0f);
+    }
+
+    //================================//
+    static std::vector<Eigen::Vector3f> ClipPolygonAgainstPlane(const std::vector<Eigen::Vector3f>& polygon, const Eigen::Vector3f& planeNormal, float planeOffset)
+    {
+        std::vector<Eigen::Vector3f> clipped;
+        if (polygon.empty())
+            return clipped;
+
+        clipped.reserve(polygon.size() + 1);
+
+        const int count = static_cast<int>(polygon.size());
+        for (int i = 0; i < count; ++i)
         {
-            outVertices[0] = faceCenter + uVec + vVec;
-            outVertices[1] = faceCenter + uVec - vVec;
-            outVertices[2] = faceCenter - uVec - vVec;
-            outVertices[3] = faceCenter - uVec + vVec;
+            const Eigen::Vector3f& a = polygon[i];
+            const Eigen::Vector3f& b = polygon[(i + 1) % count];
+
+            const float da = planeNormal.dot(a) - planeOffset;
+            const float db = planeNormal.dot(b) - planeOffset;
+
+            const bool insideA = da <= 0.0f;
+            const bool insideB = db <= 0.0f;
+
+            if (insideA)
+                clipped.push_back(a);
+
+            if (insideA != insideB)
+            {
+                const float t = da / (da - db);
+                clipped.push_back(a + t * (b - a));
+            }
+        }
+
+        return clipped;
+    }
+
+    //================================//
+    static void ClosestPointsOnSegments(const Eigen::Vector3f& a0, const Eigen::Vector3f& a1,
+                                        const Eigen::Vector3f& b0, const Eigen::Vector3f& b1,
+                                        Eigen::Vector3f& pointA, Eigen::Vector3f& pointB)
+    {
+        const Eigen::Vector3f d1 = a1 - a0;
+        const Eigen::Vector3f d2 = b1 - b0;
+        const Eigen::Vector3f r = a0 - b0;
+
+        const float a = d1.dot(d1);
+        const float e = d2.dot(d2);
+        const float f = d2.dot(r);
+
+        float s = 0.0f;
+        float t = 0.0f;
+
+        if (a <= 1e-12f && e <= 1e-12f)
+        {
+            pointA = a0;
+            pointB = b0;
+            return;
+        }
+
+        if (a <= 1e-12f)
+        {
+            t = std::clamp(f / e, 0.0f, 1.0f);
         }
         else
         {
-            outVertices[0] = faceCenter - uVec - vVec;
-            outVertices[1] = faceCenter - uVec + vVec;
-            outVertices[2] = faceCenter + uVec + vVec;
-            outVertices[3] = faceCenter + uVec - vVec;
+            const float c = d1.dot(r);
+            if (e <= 1e-12f)
+            {
+                s = std::clamp(-c / a, 0.0f, 1.0f);
+            }
+            else
+            {
+                const float b = d1.dot(d2);
+                const float denom = a * e - b * b;
+
+                if (denom > 1e-12f)
+                    s = std::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+
+                t = (b * s + f) / e;
+
+                if (t < 0.0f)
+                {
+                    t = 0.0f;
+                    s = std::clamp(-c / a, 0.0f, 1.0f);
+                }
+                else if (t > 1.0f)
+                {
+                    t = 1.0f;
+                    s = std::clamp((b - c) / a, 0.0f, 1.0f);
+                }
+            }
         }
+
+        pointA = a0 + d1 * s;
+        pointB = b0 + d2 * t;
     }
 
     //================================//
-    // Find which face of a box is most opposing a given normal.
-    // Returns the face whose outward normal has the smallest
-    // (most negative) dot product with refNormal.
-    void FindIncidentFace(const Eigen::Matrix3f& rot, const Eigen::Vector3f& refNormal, int& outFaceAxis, float& outFaceSign)
+    static void CreateFaceContact(const FaceQuery& faceQuery, const Transform& transformA, const ConvexHull& hullA, const Transform& transformB, const ConvexHull& hullB, CollisionResult& result);
+    static void CreateEdgeContact(const EdgeQuery& edgeQuery, const Transform& transformA, const ConvexHull& hullA, const Transform& transformB, const ConvexHull& hullB, CollisionResult& result);
+    static FaceQuery QueryFaceDirections(const Transform& transformA, const ConvexHull& hullA, const Transform& transformB, const ConvexHull& hullB);
+    static EdgeQuery QueryEdgeDirections(const Transform& transformA, const ConvexHull& hullA, const Transform& transformB, const ConvexHull& hullB);
+
+    //================================//
+    CollisionResult CollisionHullHull(const Mesh* A, const Mesh* B)
     {
+        CollisionResult result;
+        result.numContacts = 0;
+
+        const ConvexHull& hullA = A->solver->GetModelConvexHull(A->modelType);
+        const ConvexHull& hullB = B->solver->GetModelConvexHull(B->modelType);
+        if (hullA.vertexCount() == 0 || hullB.vertexCount() == 0 ||
+            hullA.faceCount() == 0 || hullB.faceCount() == 0)
+        {
+            return result;
+        }
+
+        const Transform& transformA = A->transform;
+        const Transform& transformB = B->transform;
+
+        FaceQuery faceQueryA = QueryFaceDirections(transformA, hullA, transformB, hullB);
+        if (faceQueryA.separation > 0.0)
+            return result;
+
+        FaceQuery faceQueryB = QueryFaceDirections(transformB, hullB, transformA, hullA);
+        if (faceQueryB.separation > 0.0)
+            return result;
+
+        EdgeQuery edgeQuery = QueryEdgeDirections(transformA, hullA, transformB, hullB);
+        if (edgeQuery.separation > 0.0)
+            return result;
+
+        // HULL INTERSECTION
+        bool isFaceContactA = faceQueryA.separation >= edgeQuery.separation;
+        bool isFaceContactB = faceQueryB.separation >= edgeQuery.separation;
+
+        if (isFaceContactA && faceQueryA.separation >= faceQueryB.separation - FACE_CONTACT_EDGE_BIAS)
+        {
+            CreateFaceContact(faceQueryA, transformA, hullA, transformB, hullB, result);
+        }
+        else if (isFaceContactB && faceQueryB.separation >= faceQueryA.separation - FACE_CONTACT_EDGE_BIAS)
+        {
+            CreateFaceContact(faceQueryB, transformB, hullB, transformA, hullA, result);
+
+            for (int i = 0; i < result.numContacts; ++i)
+            {
+                std::swap(result.contactPoints[i].rA, result.contactPoints[i].rB);
+                result.contactPoints[i].normal = -result.contactPoints[i].normal;
+            }
+        }
+        else
+        {
+            CreateEdgeContact(edgeQuery, transformA, hullA, transformB, hullB, result);
+        }
+
+        return result;
+    }
+
+    //================================//
+    static FaceQuery QueryFaceDirections(const Transform& transformA, const ConvexHull& hullA, const Transform& transformB, const ConvexHull& hullB)
+    {
+        FaceQuery query;
+        query.separation = -INFINITY;
+        query.faceIndex = 0;
+
+        if (hullA.faceCount() == 0 || hullB.vertexCount() == 0)
+        {
+            query.separation = std::numeric_limits<double>::infinity();
+            return query;
+        }
+
+        const Eigen::Matrix3f rotationA = transformA.GetRotation().toRotationMatrix();
+        const Eigen::Matrix3f rotationB = transformB.GetRotation().toRotationMatrix();
+
+        const Eigen::Matrix3f linearA = rotationA * transformA.GetScale().asDiagonal();
+        const Eigen::Matrix3f linearB = rotationB * transformB.GetScale().asDiagonal();
+
+        const Eigen::Matrix3f normalMatrixA = linearA.inverse().transpose();
+
+        int N = hullA.faceCount();
+        for (int i = 0; i < N; i++)
+        {
+            const HullFace& faceA = hullA.faces[i];
+            if (faceA.vertexIndices[0] >= hullA.vertices.size())
+                continue;
+
+            Eigen::Vector3f planeNormal = normalMatrixA * faceA.normal;
+            const float normalLengthSq = planeNormal.squaredNorm();
+            if (normalLengthSq <= 1e-12f)
+                continue;
+
+            planeNormal /= std::sqrt(normalLengthSq);
+
+            const Eigen::Vector3f planePoint = transformA.TransformPoint(hullA.vertices[faceA.vertexIndices[0]].position);
+
+            const Eigen::Vector3f supportDirectionLocalB = linearB.transpose() * (-planeNormal);
+            const Eigen::Vector3f supportPointLocalB = hullB.GetSupport(supportDirectionLocalB);
+            const Eigen::Vector3f supportPointWorldB = transformB.TransformPoint(supportPointLocalB);
+
+            const double separation = static_cast<double>(planeNormal.dot(supportPointWorldB - planePoint));
+            if (separation > query.separation)
+            {
+                query.separation = separation;
+                query.faceIndex = static_cast<uint16_t>(i);
+            }
+        }
+
+        return query;
+    }
+
+    //================================//
+    static EdgeQuery QueryEdgeDirections(const Transform& transformA, const ConvexHull& hullA, const Transform& transformB, const ConvexHull& hullB)
+    {
+        EdgeQuery query;
+        query.separation = -INFINITY;
+        query.edgeIndexA = 0;
+        query.edgeIndexB = 0;
+
+        if (hullA.edgeCount() == 0 || hullB.edgeCount() == 0 ||
+            hullA.vertexCount() == 0 || hullB.vertexCount() == 0)
+        {
+            query.separation = std::numeric_limits<double>::infinity();
+            return query;
+        }
+
+        int edgeCountA = hullA.edgeCount();
+        int edgeCountB = hullB.edgeCount();
+
+        const Eigen::Matrix3f rotationA = transformA.GetRotation().toRotationMatrix();
+        const Eigen::Matrix3f rotationB = transformB.GetRotation().toRotationMatrix();
+
+        const Eigen::Matrix3f linearA = rotationA * transformA.GetScale().asDiagonal();
+        const Eigen::Matrix3f linearB = rotationB * transformB.GetScale().asDiagonal();
+
+        const Eigen::Vector3f hullCenterWorldA = transformA.TransformPoint(hullA.centroid);
+
+        for(int ecA = 0; ecA < edgeCountA; ecA++)
+        {
+            const HullEdge& edgeA = hullA.edges[ecA];
+            if (edgeA.vertexIndices[0] >= hullA.vertices.size() || edgeA.vertexIndices[1] >= hullA.vertices.size())
+                continue;
+            if (edgeA.faceIndices[0] >= hullA.faces.size() || edgeA.faceIndices[1] >= hullA.faces.size())
+                continue;
+
+            const Eigen::Vector3f edgeAOriginWorld = transformA.TransformPoint(hullA.vertices[edgeA.vertexIndices[0]].position);
+            const Eigen::Vector3f edgeAEndWorld = transformA.TransformPoint(hullA.vertices[edgeA.vertexIndices[1]].position);
+            const Eigen::Vector3f edgeADirectionWorld = edgeAEndWorld - edgeAOriginWorld;
+
+            if (edgeADirectionWorld.squaredNorm() <= 1e-12f)
+                continue;
+
+            const Eigen::Vector3f edgeAFaceNormal0 = TransformNormalToWorld(transformA, hullA.faces[edgeA.faceIndices[0]].normal);
+            const Eigen::Vector3f edgeAFaceNormal1 = TransformNormalToWorld(transformA, hullA.faces[edgeA.faceIndices[1]].normal);
+
+            for (int ecB = 0; ecB < edgeCountB; ecB++)
+            {
+                const HullEdge& edgeB = hullB.edges[ecB];
+                if (edgeB.vertexIndices[0] >= hullB.vertices.size() || edgeB.vertexIndices[1] >= hullB.vertices.size())
+                    continue;
+                if (edgeB.faceIndices[0] >= hullB.faces.size() || edgeB.faceIndices[1] >= hullB.faces.size())
+                    continue;
+
+                const Eigen::Vector3f edgeBOriginWorld = transformB.TransformPoint(hullB.vertices[edgeB.vertexIndices[0]].position);
+                const Eigen::Vector3f edgeBEndWorld = transformB.TransformPoint(hullB.vertices[edgeB.vertexIndices[1]].position);
+                const Eigen::Vector3f edgeBDirectionWorld = edgeBEndWorld - edgeBOriginWorld;
+
+                if (edgeBDirectionWorld.squaredNorm() <= 1e-12f)
+                    continue;
+
+                const Eigen::Vector3f edgeBFaceNormal0 = TransformNormalToWorld(transformB, hullB.faces[edgeB.faceIndices[0]].normal);
+                const Eigen::Vector3f edgeBFaceNormal1 = TransformNormalToWorld(transformB, hullB.faces[edgeB.faceIndices[1]].normal);
+
+                if (!IsMinkowskiFace(edgeAFaceNormal0, edgeAFaceNormal1, edgeADirectionWorld,
+                                     edgeBFaceNormal0, edgeBFaceNormal1, edgeBDirectionWorld))
+                {
+                    continue;
+                }
+
+                Eigen::Vector3f axis = edgeADirectionWorld.cross(edgeBDirectionWorld);
+                const float axisLengthSq = axis.squaredNorm();
+                if (axisLengthSq <= 1e-12f)
+                    continue;
+
+                axis /= std::sqrt(axisLengthSq);
+
+                if (axis.dot(edgeAOriginWorld - hullCenterWorldA) < 0.0f)
+                    axis = -axis;
+
+                const Eigen::Vector3f supportDirectionLocalB = linearB.transpose() * (-axis);
+                const Eigen::Vector3f supportPointLocalB = hullB.GetSupport(supportDirectionLocalB);
+                const Eigen::Vector3f supportPointWorldB = transformB.TransformPoint(supportPointLocalB);
+
+                const double separation = static_cast<double>(axis.dot(supportPointWorldB - edgeAOriginWorld));
+                if (separation > query.separation)
+                {
+                    query.separation = separation;
+                    query.edgeIndexA = static_cast<uint16_t>(ecA);
+                    query.edgeIndexB = static_cast<uint16_t>(ecB);
+                }
+            }
+        }
+
+        return query;
+    }
+
+    //================================//
+    static void CreateFaceContact(const FaceQuery& faceQuery, const Transform& transformA, const ConvexHull& hullA, const Transform& transformB, const ConvexHull& hullB, CollisionResult& result)
+    {
+        result.numContacts = 0;
+        if (faceQuery.faceIndex >= hullA.faceCount())
+            return;
+
+        const HullFace& referenceFace = hullA.faces[faceQuery.faceIndex];
+        const Eigen::Vector3f referenceNormal = TransformNormalToWorld(transformA, referenceFace.normal);
+        if (referenceNormal.squaredNorm() <= 1e-12f)
+            return;
+
+        int incidentFaceIndex = -1;
         float minDot = std::numeric_limits<float>::max();
-        outFaceAxis = 0;
-        outFaceSign = 0.0f;
-
-        for (int axis = 0; axis < 3; axis++)
+        for (int i = 0; i < static_cast<int>(hullB.faceCount()); i++)
         {
-            float d = rot.col(axis).dot(refNormal);
-            if (d < minDot) { minDot = d; outFaceAxis = axis; outFaceSign = 1.0f; }
-            if (-d < minDot) { minDot = -d; outFaceAxis = axis; outFaceSign = -1.0f; }
-        }
-    }
-
-    //================================//
-    // Sutherland-Hodgman: clip a convex polygon against a plane.
-    int PolygonFaceClip(const Eigen::Vector3f* in, int numIn, const Eigen::Vector3f& planeNormal, float planeOffset, Eigen::Vector3f* out)
-    {
-        if (numIn < 1) return 0;
-
-        int outIndex = 0;
-
-        for (int i = 0; i < numIn; i++)
-        {
-            int j = (i + 1) % numIn;
-            float di = planeNormal.dot(in[i]) - planeOffset;
-            float dj = planeNormal.dot(in[j]) - planeOffset;
-
-            if (di <= 0.f) out[outIndex++] = in[i];
-            if (outIndex >= 8) return outIndex; // 8 would mean whole box clipped
-
-            if ((di > 0.f) != (dj > 0.f)) // Meaning an edge is clipping the plane
+            const Eigen::Vector3f incidentNormal = TransformNormalToWorld(transformB, hullB.faces[i].normal);
+            const float d = referenceNormal.dot(incidentNormal);
+            if (d < minDot)
             {
-                float t = di / (di - dj);
-                out[outIndex++] = in[i] + t * (in[j] - in[i]);
-                if (outIndex >= 8) return outIndex;
+                minDot = d;
+                incidentFaceIndex = i;
             }
         }
 
-        return outIndex;
-    }
+        if (incidentFaceIndex < 0)
+            return;
 
-    //================================//
-    void FaceFaceContacts(
-        const Eigen::Vector3f& posA, const Eigen::Vector3f& scaleA, const Eigen::Matrix3f& rotA,
-        const Eigen::Vector3f& posB, const Eigen::Vector3f& scaleB, const Eigen::Matrix3f& rotB,
-        const Eigen::Vector3f& refFaceCenter, const Eigen::Matrix3f& refFaceRot, const Eigen::Vector3f& refFaceHalfs,
-        const Eigen::Vector3f& incFaceCenter, const Eigen::Matrix3f& incFaceRot, const Eigen::Vector3f& incFaceHalfs,
-        int refAxis, float refSign,
-        const Eigen::Vector3f& normal, //A->B
-        AxisType axisType, int axisA, int axisB,
-        CollisionResult& outCollision)
-    {
-        Eigen::Vector3f refFaceNormal = refFaceRot.col(refAxis) * refSign;
-        float refFaceOffset = refFaceNormal.dot(refFaceCenter) + refFaceHalfs[refAxis];
-
-        int incFaceAxis; float incFaceSign;
-        FindIncidentFace(incFaceRot, refFaceNormal, incFaceAxis, incFaceSign);
-
-        Eigen::Vector3f incFaceVertices[4];
-        GetBoxVerticesWorld(incFaceCenter, incFaceHalfs, incFaceRot, incFaceAxis, incFaceSign, incFaceVertices);
-
-        int u = (refAxis + 1) % 3;
-        int v = (refAxis + 2) % 3;
-
-        struct ClipPlane { Eigen::Vector3f normal; float offset; };
-
-        ClipPlane sidePlanes[4]{};
-        sidePlanes[0].normal = refFaceRot.col(u); sidePlanes[0].offset = refFaceRot.col(u).dot(refFaceCenter) + refFaceHalfs[u];
-        sidePlanes[1].normal = -refFaceRot.col(u); sidePlanes[1].offset = -refFaceRot.col(u).dot(refFaceCenter) + refFaceHalfs[u];
-        sidePlanes[2].normal = refFaceRot.col(v); sidePlanes[2].offset = refFaceRot.col(v).dot(refFaceCenter) + refFaceHalfs[v];
-        sidePlanes[3].normal = -refFaceRot.col(v); sidePlanes[3].offset = -refFaceRot.col(v).dot(refFaceCenter) + refFaceHalfs[v];
-
-        // Collision "clip in incident face" points
-        Eigen::Vector3f clipInputBuffer1[8], clipInputBuffer2[8];
-        for (int i = 0; i < 4; ++i) clipInputBuffer1[i] = incFaceVertices[i];
-        int numClipPoints = 4;
-
-        for (int p = 0; p < 4; p++) // ping pong between two buffers to avoid copying clipped points
-        {
-            Eigen::Vector3f* source = (p % 2 == 0) ? clipInputBuffer1 : clipInputBuffer2;
-            Eigen::Vector3f* dest = (p % 2 == 0) ? clipInputBuffer2 : clipInputBuffer1;
-
-            numClipPoints = PolygonFaceClip(source, numClipPoints, sidePlanes[p].normal, sidePlanes[p].offset, dest);
-            if (numClipPoints < 1) return;
-        }
-
-        Eigen::Vector3f* finalClipPoints = (4 % 2 == 0) ? clipInputBuffer1 : clipInputBuffer2;
-
-        Eigen::Matrix3f invRotA = rotA.transpose();
-        Eigen::Matrix3f invRotB = rotB.transpose();
-
-        // Cull points in front of the reference face
-        for (int i = 0; i < numClipPoints; i++)
-        {
-           float separation = refFaceNormal.dot(finalClipPoints[i]) - refFaceOffset;
-
-            if (separation <= 0.f)
-            {
-                ContactPoint& contact = outCollision.contactPoints[outCollision.numContacts];
-
-                Eigen::Vector3f projectedPoint = finalClipPoints[i] - refFaceNormal * separation;
-                
-                contact.position = projectedPoint;
-                contact.normal = normal;
-                contact.penetration = -separation;
-
-                // Reference body → projected point (on the face surface)
-                // Incident body  → original clip point (where it actually is)
-                contact.rA = invRotA * (projectedPoint - posA);
-                contact.rB = invRotB * (finalClipPoints[i] - posB);
-
-                contact.id = createID(axisType, axisA, axisB, i);
-
-                outCollision.numContacts++;
-                if (outCollision.numContacts >= 8) return;
-            }
-        }
-    }
-
-    //================================//
-    void ClosestPointTwoLineSegments(const Eigen::Vector3f& p1, const Eigen::Vector3f& d1, const Eigen::Vector3f& p2, const Eigen::Vector3f& d2, float& s, float& t)
-    {
-        // Line 1: p1 + s * d1
-        // Line 2: p2 + t * d2, s, t in [0, 1]
-
-        Eigen::Vector3f r = p1 - p2;
-        float a = d1.dot(d1);
-        float b = d1.dot(d2);
-        float c = d2.dot(d2);
-        float d = d1.dot(r);
-        float e = d2.dot(r);
-
-        float denom = a * c - b * b;
-
-        if (denom < 1e-6f)
-        {
-            s = 0.0f; // Parallel line (or quasi parallet at least)
-            t = (b > c ? d / b : e / c);
-        }
-        else
-        {
-            s = (b * e - c * d) / denom;
-            t = (a * e - b * d) / denom;
-        }
-
-        s = std::clamp(s, 0.0f, 1.0f);
-        t = std::clamp(t, 0.0f, 1.0f);
-    }
-
-    //================================//
-    void LineLineContacts(
-        const Eigen::Vector3f& posA, const Eigen::Vector3f& scaleA, const Eigen::Matrix3f& rotA,
-        const Eigen::Vector3f& posB, const Eigen::Vector3f& scaleB, const Eigen::Matrix3f& rotB,
-        const Eigen::Vector3f& normal, int axisA, int axisB, CollisionResult& outCollision)
-    {
-        Eigen::Vector3f d = posB - posA;
-
-        int uA = (axisA + 1) % 3;
-        int vA = (axisA + 2) % 3;
-
-        float signUA = (rotA.col(uA).dot(d) > 0.f) ? 1.0f : -1.0f;
-        float signVA = (rotA.col(vA).dot(d) > 0.f) ? 1.0f : -1.0f;
-
-        Eigen::Vector3f midA = posA + rotA.col(uA) * (signUA * scaleA[uA] * 0.5f) + rotA.col(vA) * (signVA * scaleA[vA] * 0.5f);
-        Eigen::Vector3f dirA = rotA.col(axisA);
-        float lenA = scaleA[axisA];
-        Eigen::Vector3f startA = midA - dirA * (lenA * 0.5f);
-        Eigen::Vector3f endA = midA + dirA * (lenA * 0.5f);
-
-        int uB = (axisB + 1) % 3;
-        int vB = (axisB + 2) % 3;
-
-        float signUB = (rotB.col(uB).dot(-d) > 0.f) ? 1.0f : -1.0f;
-        float signVB = (rotB.col(vB).dot(-d) > 0.f) ? 1.0f : -1.0f;
-
-        Eigen::Vector3f midB = posB + rotB.col(uB) * (signUB * scaleB[uB] * 0.5f) + rotB.col(vB) * (signVB * scaleB[vB] * 0.5f);
-        Eigen::Vector3f dirB = rotB.col(axisB);
-        float lenB = scaleB[axisB];
-        Eigen::Vector3f startB = midB - dirB * (lenB * 0.5f);
-        Eigen::Vector3f endB = midB + dirB * (lenB * 0.5f);
-
-        float s, t;
-        ClosestPointTwoLineSegments(startA, dirA * lenA, startB, dirB * lenB, s, t);
-
-        Eigen::Vector3f closestCollisionPointOnA = startA + dirA * (s * lenA);
-        Eigen::Vector3f closestCollisionPointOnB = startB + dirB * (t * lenB);
-
-        ContactPoint& contact = outCollision.contactPoints[0];
-        contact.position = 0.5f * (closestCollisionPointOnA + closestCollisionPointOnB);
-        contact.normal = normal;
-        contact.penetration = (closestCollisionPointOnB - closestCollisionPointOnA).dot(normal);
-        if (contact.penetration < 0.f) contact.penetration = -contact.penetration;
-
-        Eigen::Matrix3f invRotA = rotA.transpose();
-        Eigen::Matrix3f invRotB = rotB.transpose();
-
-        contact.rA = invRotA * (closestCollisionPointOnA - posA);
-        contact.rB = invRotB * (closestCollisionPointOnB - posB);
-
-        contact.id = createID(AxisType::EDGE, axisA, axisB, 0);
-        outCollision.numContacts = 1; // Only one possible contact for sure
-    }
-}
-
-//================================//
-CollisionResult CollisionSpace::CollisionBoxBox(const Mesh* meshA, const Mesh* meshB)
-{
-    CollisionResult result{};
-    result.numContacts = 0;
-
-    Eigen::Vector3f posA = meshA->transform.GetPosition();
-    Eigen::Vector3f posB = meshB->transform.GetPosition();
-
-    Eigen::Vector3f scaleA = meshA->transform.GetScale();
-    Eigen::Vector3f scaleB = meshB->transform.GetScale();
-
-    Quaternionf qA = meshA->transform.GetRotation();
-    Quaternionf qB = meshB->transform.GetRotation();
-
-    Eigen::Matrix3f rotA = qA.toRotationMatrix();
-    Eigen::Matrix3f rotB = qB.toRotationMatrix();
-
-    Eigen::Vector3f d = posB - posA;
-    Eigen::Matrix3f C = rotA.transpose() * rotB;
-    Eigen::Vector3f T = rotA.transpose() * d;
-
-    Eigen::Matrix3f absoluteRotation;
-    for (int i = 0; i < 3; i++)
-        for (int j = 0; j < 3; j++)
-            absoluteRotation(i, j) = std::abs(C(i, j)) + 1e-6f;
-
-    // idea: test 15 ptential axis,
-    float bestPenetration = std::numeric_limits<float>::max();
-    int bestAxis = -1;
-    float bestSign = 1.f;
-
-    auto TestAxis = [&](int axisIndex, float separation, float sign) -> bool
-    {
-        if (separation < 0.f) return false; // SA found
-
-        if (separation < bestPenetration)
-        {
-            bestPenetration = separation;
-            bestAxis = axisIndex;
-            bestSign = sign;
-        }
-        return true;
-    };
-
-    // First A faces (0, 1, 2)
-    for (int i = 0; i < 3; i++)
-    {
-        float rA = scaleA[i] * 0.5f;
-        float rB = absoluteRotation.row(i).dot(scaleB * 0.5f);
-        float distance = std::abs(T[i]);
-        float penetration = rA + rB - distance;
-        float s = (T[i] > 0.f) ? 1.0f : -1.0f;
-
-        if (!TestAxis(i, penetration, s)) return result;
-    }
-
-    // Then B faces (face axis of course I mean) (3, 4, 5)
-    for (int i = 0; i < 3; i++)
-    {
-        float rA = absoluteRotation.col(i).dot(scaleA * 0.5f);
-        float rB = scaleB[i] * 0.5f;
-        float distance = std::abs(C.col(i).dot(T));
-        float penetration = rA + rB - distance;
-        float s = (T.dot(C.col(i)) > 0.f) ? 1.0f : -1.0f;
-
-        if (!TestAxis(3 + i, penetration, s)) return result;
-    }
-
-    float bestFacePen = bestPenetration;
-
-
-    // still need to test Edge Edge axes (6-14)
-    for (int i = 0; i < 3; i++)
-    {
+        std::vector<Eigen::Vector3f> incidentPolygon;
+        incidentPolygon.reserve(3);
+        const HullFace& incidentFace = hullB.faces[incidentFaceIndex];
         for (int j = 0; j < 3; j++)
         {
-            float crossLenSQ = 1.f - C(i, j) * C(i, j);
-            if (crossLenSQ < 1e-6f) continue; // PARALLEL
+            if (incidentFace.vertexIndices[j] >= hullB.vertices.size())
+                return;
 
-            float invLen = 1.f / std::sqrt(crossLenSQ);
+            incidentPolygon.push_back(transformB.TransformPoint(hullB.vertices[incidentFace.vertexIndices[j]].position));
+        }
 
-            // OBB - OBB
-            int i1 = (i + 1) % 3, i2 = (i + 2) % 3;
-            int j1 = (j + 1) % 3, j2 = (j + 2) % 3;
+        Eigen::Vector3f referenceVertices[3];
+        for (int j = 0; j < 3; j++)
+        {
+            if (referenceFace.vertexIndices[j] >= hullA.vertices.size())
+                return;
 
-            float rA = scaleA[i1] * 0.5f * absoluteRotation(i2, j) + scaleA[i2] * 0.5f * absoluteRotation(i1, j);
-            float rB = scaleB[j1] * 0.5f * absoluteRotation(i, j2) + scaleB[j2] * 0.5f * absoluteRotation(i, j1);
-            float raw = T[i2] * C(i1, j) - T[i1] * C(i2, j);
-            float distance = std::abs(raw);
-            float penetration = (rA + rB - distance) * invLen;
-            float s = (raw > 0.f) ? 1.0f : -1.0f;
+            referenceVertices[j] = transformA.TransformPoint(hullA.vertices[referenceFace.vertexIndices[j]].position);
+        }
 
-            // Add a bias towards Face contacts
-            const float FACE_BIAS_REL = 0.95f;
-            const float FACE_BIAS_ABS = 0.005f;
-            if (penetration < FACE_BIAS_REL * bestFacePen + FACE_BIAS_ABS)
+        for (int j = 0; j < 3; j++)
+        {
+            const Eigen::Vector3f edge = referenceVertices[(j + 1) % 3] - referenceVertices[j];
+            const Eigen::Vector3f sidePlaneNormal = edge.cross(referenceNormal);
+            const float sidePlaneOffset = sidePlaneNormal.dot(referenceVertices[j]);
+            incidentPolygon = ClipPolygonAgainstPlane(incidentPolygon, sidePlaneNormal, sidePlaneOffset);
+            if (incidentPolygon.empty())
+                return;
+        }
+
+        const float referencePlaneOffset = referenceNormal.dot(referenceVertices[0]);
+        for (int i = 0; i < static_cast<int>(incidentPolygon.size()) && result.numContacts < 8; i++)
+        {
+            const Eigen::Vector3f& point = incidentPolygon[i];
+            const float separation = referenceNormal.dot(point) - referencePlaneOffset;
+            if (separation > 0.0f)
+                continue;
+
+            const Eigen::Vector3f projectedPoint = point - separation * referenceNormal;
+
+            bool isDuplicate = false;
+            for (int contactIndex = 0; contactIndex < result.numContacts; ++contactIndex)
             {
-                if (!TestAxis(6 + i * 3 + j, penetration, s)) return result;
+                if ((result.contactPoints[contactIndex].position - projectedPoint).squaredNorm() <= 1e-10f)
+                {
+                    isDuplicate = true;
+                    break;
+                }
             }
+            if (isDuplicate)
+                continue;
+
+            ContactPoint& contact = result.contactPoints[result.numContacts];
+            contact.position = projectedPoint;
+            contact.normal = referenceNormal;
+            contact.penetration = -separation;
+            contact.rA = ToLocalOffset(transformA, projectedPoint);
+            contact.rB = ToLocalOffset(transformB, point);
+            contact.id = (static_cast<uint32_t>(faceQuery.faceIndex) << 8) | static_cast<uint32_t>(i);
+            result.numContacts++;
         }
     }
 
-    if (bestAxis < 0) return result; // No collision
+    //================================//
+    static void CreateEdgeContact(const EdgeQuery& edgeQuery, const Transform& transformA, const ConvexHull& hullA, const Transform& transformB, const ConvexHull& hullB, CollisionResult& result)
+    {  
+        result.numContacts = 0;
+        if (edgeQuery.edgeIndexA >= hullA.edges.size() || edgeQuery.edgeIndexB >= hullB.edges.size())
+            return;
 
-    Eigen::Vector3f normal;
-    if (bestAxis < 3)
-    {
-        normal = rotA.col(bestAxis) * bestSign;
+        const HullEdge& edgeA = hullA.edges[edgeQuery.edgeIndexA];
+        const HullEdge& edgeB = hullB.edges[edgeQuery.edgeIndexB];
+        if (edgeA.vertexIndices[0] >= hullA.vertices.size() || edgeA.vertexIndices[1] >= hullA.vertices.size())
+            return;
+        if (edgeB.vertexIndices[0] >= hullB.vertices.size() || edgeB.vertexIndices[1] >= hullB.vertices.size())
+            return;
+
+        const Eigen::Vector3f a0 = transformA.TransformPoint(hullA.vertices[edgeA.vertexIndices[0]].position);
+        const Eigen::Vector3f a1 = transformA.TransformPoint(hullA.vertices[edgeA.vertexIndices[1]].position);
+        const Eigen::Vector3f b0 = transformB.TransformPoint(hullB.vertices[edgeB.vertexIndices[0]].position);
+        const Eigen::Vector3f b1 = transformB.TransformPoint(hullB.vertices[edgeB.vertexIndices[1]].position);
+
+        Eigen::Vector3f axis = (a1 - a0).cross(b1 - b0);
+        const float axisLengthSq = axis.squaredNorm();
+        if (axisLengthSq <= 1e-12f)
+            return;
+
+        axis /= std::sqrt(axisLengthSq);
+
+        const Eigen::Vector3f hullCenterWorldA = transformA.TransformPoint(hullA.centroid);
+        if (axis.dot(a0 - hullCenterWorldA) < 0.0f)
+            axis = -axis;
+
+        Eigen::Vector3f pointA, pointB;
+        ClosestPointsOnSegments(a0, a1, b0, b1, pointA, pointB);
+
+        ContactPoint& contact = result.contactPoints[0];
+        contact.position = 0.5f * (pointA + pointB);
+        contact.normal = axis;
+        contact.penetration = std::max(0.0f, -axis.dot(pointB - pointA));
+        contact.rA = ToLocalOffset(transformA, pointA);
+        contact.rB = ToLocalOffset(transformB, pointB);
+        contact.id =
+            (1u << 31) |
+            (static_cast<uint32_t>(edgeQuery.edgeIndexA) << 16) |
+            static_cast<uint32_t>(edgeQuery.edgeIndexB);
+
+        result.numContacts = 1;
     }
-    else if (bestAxis < 6)
-    {
-        int bestAxisB = bestAxis - 3;
-        normal = rotB.col(bestAxisB) * bestSign;
-    }
-    else
-    {
-        int i = (bestAxis - 6) / 3;
-        int j = (bestAxis - 6) % 3;
-        normal = rotA.col(i).cross(rotB.col(j));
-
-        float len = normal.norm();
-        if (len < 1e-6f) return result;
-        normal /= len;
-
-        if (normal.dot(d) < 0.f) normal = -normal; // Always point from A to B (convention)
-    }
-
-    // NOW is it a face contact situation? An edge contact situation?
-    // remember: up to 4 contact points, so 8 relative contacts
-
-    if (bestAxis < 3) // First case of testing agains faces of box A
-    {
-        int referenceFaceAxis = bestAxis;
-        float referenceFaceSign = bestSign;
-
-        // here the ref box is A
-        FaceFaceContacts(
-            posA, scaleA, rotA,
-            posB, scaleB, rotB,
-            posA, rotA, scaleA * 0.5f,
-            posB, rotB, scaleB * 0.5f,
-            referenceFaceAxis, referenceFaceSign,
-            normal, AxisType::FACE_A, referenceFaceAxis, 0,
-            result);
-    }
-    else if (bestAxis < 6) // Testing against faces of box B
-    {
-        int referenceFaceAxis = bestAxis - 3;
-        float referenceFaceSign = -bestSign;
-
-        // here the ref box is B
-        FaceFaceContacts(
-            posB, scaleB, rotB,
-            posA, scaleA, rotA,
-            posB, rotB, scaleB * 0.5f,
-            posA, rotA, scaleA * 0.5f,
-            referenceFaceAxis, referenceFaceSign,
-            normal, AxisType::FACE_B, 0, referenceFaceAxis,
-            result);
-
-        for (int i = 0; i < result.numContacts; i++)
-            std::swap(result.contactPoints[i].rA, result.contactPoints[i].rB);
-    }
-    else // edge edge
-    {
-        int edgeAxisA = (bestAxis - 6) / 3;
-        int edgeAxisB = (bestAxis - 6) % 3;
-
-        LineLineContacts(
-            posA, scaleA, rotA,
-            posB, scaleB, rotB,
-            normal, edgeAxisA, edgeAxisB,
-            result);
-    }
-
-    return result;
 }

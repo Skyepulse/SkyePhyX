@@ -60,6 +60,38 @@ struct ConvexHull
     uint32_t vertexCount() const { return static_cast<uint32_t>(vertices.size()); }
     uint32_t faceCount() const { return static_cast<uint32_t>(faces.size()); }
     uint32_t edgeCount() const { return static_cast<uint32_t>(edges.size()); }
+
+    //================================//
+    int GetSupportIndex(const Eigen::Vector3f& direction) const
+    {
+        if (vertices.empty())
+            return -1;
+
+        int bestIndex = 0;
+        float bestProjection = vertices[0].position.dot(direction);
+
+        for (int i = 1; i < static_cast<int>(vertices.size()); ++i)
+        {
+            const float projection = vertices[i].position.dot(direction);
+            if (projection > bestProjection)
+            {
+                bestProjection = projection;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    //================================//
+    Eigen::Vector3f GetSupport(const Eigen::Vector3f& direction) const
+    {
+        const int supportIndex = GetSupportIndex(direction);
+        if (supportIndex < 0)
+            return Eigen::Vector3f::Zero();
+
+        return vertices[supportIndex].position;
+    }
 };
 
 //================================//

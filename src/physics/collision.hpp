@@ -4,6 +4,23 @@
 #include "../helpers/geometry.hpp"
 #include <array>
 
+class Solver;
+
+//================================//
+struct FaceQuery
+{
+    double separation;
+    uint16_t faceIndex;
+};
+
+//================================//
+struct EdgeQuery
+{
+    double separation;
+    uint16_t edgeIndexA;
+    uint16_t edgeIndexB;
+};
+
 //================================//
 struct ContactPoint
 {
@@ -27,7 +44,7 @@ struct CollisionResult
 //================================//
 namespace CollisionSpace
 {
-    CollisionResult CollisionBoxBox(const Mesh* A, const Mesh* B);
+    CollisionResult CollisionHullHull(const Mesh* A, const Mesh* B);
 }
 
 #endif // COLLISION_HPP
