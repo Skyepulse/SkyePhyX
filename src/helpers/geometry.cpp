@@ -9,6 +9,94 @@
 #include <map>
 #include <unordered_map>
 
+namespace
+{
+    struct RawHullTriangle
+    {
+        uint32_t vertexIndices[3] = { 0u, 0u, 0u };
+        Eigen::Vector3f normal = Eigen::Vector3f::Zero();
+        float planeOffset = 0.0f;
+    };
+
+    //================================//
+    static bool AreCoplanarTriangles(const RawHullTriangle& a, const RawHullTriangle& b)
+    {
+        return (a.normal.dot(b.normal) > 1.0f - 1e-4f) &&
+               (std::abs(a.planeOffset - b.planeOffset) <= 1e-4f);
+    }
+
+    //================================//
+    static HullFace BuildMergedFace(const std::vector<RawHullTriangle>& triangles, const std::vector<HullVertex>& vertices)
+    {
+        HullFace face;
+        if (triangles.empty())
+            return face;
+
+        face.normal = triangles[0].normal;
+        face.planeOffset = triangles[0].planeOffset;
+
+        std::map<std::pair<uint32_t, uint32_t>, std::pair<uint32_t, uint32_t>> orientedBoundaryEdges;
+        for (const RawHullTriangle& triangle : triangles)
+        {
+            for (int edgeIndex = 0; edgeIndex < 3; ++edgeIndex)
+            {
+                const uint32_t a = triangle.vertexIndices[edgeIndex];
+                const uint32_t b = triangle.vertexIndices[(edgeIndex + 1) % 3];
+
+                const std::pair<uint32_t, uint32_t> edge(a, b);
+                const std::pair<uint32_t, uint32_t> reversedEdge(b, a);
+
+                auto reversedIt = orientedBoundaryEdges.find(reversedEdge);
+                if (reversedIt != orientedBoundaryEdges.end())
+                    orientedBoundaryEdges.erase(reversedIt);
+                else
+                    orientedBoundaryEdges.emplace(edge, edge);
+            }
+        }
+
+        if (orientedBoundaryEdges.size() < 3)
+            return HullFace{};
+
+        std::map<uint32_t, uint32_t> nextVertex;
+        for (const auto& [edgeKey, edge] : orientedBoundaryEdges)
+        {
+            (void)edgeKey;
+            nextVertex[edge.first] = edge.second;
+        }
+
+        if (nextVertex.size() < 3)
+            return HullFace{};
+
+        const uint32_t startVertex = nextVertex.begin()->first;
+        uint32_t currentVertex = startVertex;
+
+        for (size_t i = 0; i < nextVertex.size(); ++i)
+        {
+            face.vertexIndices.push_back(currentVertex);
+
+            auto nextIt = nextVertex.find(currentVertex);
+            if (nextIt == nextVertex.end())
+                return HullFace{};
+
+            currentVertex = nextIt->second;
+            if (currentVertex == startVertex)
+                break;
+        }
+
+        if (face.vertexIndices.size() < 3 || currentVertex != startVertex)
+            return HullFace{};
+
+        const Eigen::Vector3f& p0 = vertices[face.vertexIndices[0]].position;
+        const Eigen::Vector3f& p1 = vertices[face.vertexIndices[1]].position;
+        const Eigen::Vector3f& p2 = vertices[face.vertexIndices[2]].position;
+        const Eigen::Vector3f geometricNormal = (p1 - p0).cross(p2 - p0);
+        if (geometricNormal.dot(face.normal) < 0.0f)
+            std::reverse(face.vertexIndices.begin(), face.vertexIndices.end());
+
+        return face;
+    }
+}
+
 //================================//
 static AABB ComputeLocalAABB(ModelType modelType)
 {
@@ -107,7 +195,7 @@ static ConvexHull ComputeConvexHull(const MeshData& meshData)
     if (!hull.vertices.empty())
         hull.centroid /= static_cast<float>(hull.vertices.size());
 
-    std::map<std::pair<uint32_t, uint32_t>, HullEdge> edgeMap;
+    std::vector<RawHullTriangle> rawTriangles;
 
     for (orgQhull::QhullFacet facet = qhull.beginFacet(); facet != qhull.endFacet(); facet = facet.next())
     {
@@ -118,7 +206,7 @@ static ConvexHull ComputeConvexHull(const MeshData& meshData)
         if (facetVertices.size() != 3)
             continue;
 
-        HullFace face;
+        RawHullTriangle triangle;
         for (int i = 0; i < 3; ++i)
         {
             const uint32_t qhullVertexId = static_cast<uint32_t>(facetVertices[i].id());
@@ -126,36 +214,70 @@ static ConvexHull ComputeConvexHull(const MeshData& meshData)
             if (vertexIt == qhullVertexIdToHullIndex.end())
                 return ConvexHull{};
 
-            face.vertexIndices[i] = vertexIt->second;
+            triangle.vertexIndices[i] = vertexIt->second;
         }
 
         const orgQhull::QhullHyperplane hyperplane = facet.hyperplane();
-        face.normal = Eigen::Vector3f(
+        triangle.normal = Eigen::Vector3f(
             static_cast<float>(hyperplane[0]),
             static_cast<float>(hyperplane[1]),
             static_cast<float>(hyperplane[2])
         );
 
-        const Eigen::Vector3f& p0 = hull.vertices[face.vertexIndices[0]].position;
-        const Eigen::Vector3f& p1 = hull.vertices[face.vertexIndices[1]].position;
-        const Eigen::Vector3f& p2 = hull.vertices[face.vertexIndices[2]].position;
+        const Eigen::Vector3f& p0 = hull.vertices[triangle.vertexIndices[0]].position;
+        const Eigen::Vector3f& p1 = hull.vertices[triangle.vertexIndices[1]].position;
+        const Eigen::Vector3f& p2 = hull.vertices[triangle.vertexIndices[2]].position;
 
         Eigen::Vector3f geometricNormal = (p1 - p0).cross(p2 - p0);
         if (geometricNormal.squaredNorm() <= 1e-12f)
             continue;
 
-        if (geometricNormal.dot(face.normal) < 0.0f)
-            std::swap(face.vertexIndices[1], face.vertexIndices[2]);
+        if (geometricNormal.dot(triangle.normal) < 0.0f)
+            std::swap(triangle.vertexIndices[1], triangle.vertexIndices[2]);
 
-        face.planeOffset = face.normal.dot(hull.vertices[face.vertexIndices[0]].position);
+        triangle.planeOffset = triangle.normal.dot(hull.vertices[triangle.vertexIndices[0]].position);
+        rawTriangles.push_back(triangle);
+    }
 
-        const uint32_t faceIndex = static_cast<uint32_t>(hull.faces.size());
-        hull.faces.push_back(face);
+    std::vector<bool> triangleConsumed(rawTriangles.size(), false);
+    for (size_t triangleIndex = 0; triangleIndex < rawTriangles.size(); ++triangleIndex)
+    {
+        if (triangleConsumed[triangleIndex])
+            continue;
 
-        for (int edgeIndex = 0; edgeIndex < 3; ++edgeIndex)
+        std::vector<RawHullTriangle> coplanarGroup;
+        coplanarGroup.push_back(rawTriangles[triangleIndex]);
+        triangleConsumed[triangleIndex] = true;
+
+        for (size_t otherTriangleIndex = triangleIndex + 1; otherTriangleIndex < rawTriangles.size(); ++otherTriangleIndex)
+        {
+            if (triangleConsumed[otherTriangleIndex])
+                continue;
+
+            if (!AreCoplanarTriangles(rawTriangles[triangleIndex], rawTriangles[otherTriangleIndex]))
+                continue;
+
+            coplanarGroup.push_back(rawTriangles[otherTriangleIndex]);
+            triangleConsumed[otherTriangleIndex] = true;
+        }
+
+        HullFace mergedFace = BuildMergedFace(coplanarGroup, hull.vertices);
+        if (mergedFace.vertexIndices.size() >= 3)
+            hull.faces.push_back(std::move(mergedFace));
+    }
+
+    std::map<std::pair<uint32_t, uint32_t>, HullEdge> edgeMap;
+    for (uint32_t faceIndex = 0; faceIndex < hull.faces.size(); ++faceIndex)
+    {
+        const HullFace& face = hull.faces[faceIndex];
+        const size_t vertexCount = face.vertexIndices.size();
+        if (vertexCount < 3)
+            continue;
+
+        for (size_t edgeIndex = 0; edgeIndex < vertexCount; ++edgeIndex)
         {
             const uint32_t a = face.vertexIndices[edgeIndex];
-            const uint32_t b = face.vertexIndices[(edgeIndex + 1) % 3];
+            const uint32_t b = face.vertexIndices[(edgeIndex + 1) % vertexCount];
             const std::pair<uint32_t, uint32_t> edgeKey = (a < b)
                 ? std::make_pair(a, b)
                 : std::make_pair(b, a);
@@ -182,13 +304,7 @@ static ConvexHull ComputeConvexHull(const MeshData& meshData)
 
         if (edge.faceIndices[0] >= hull.faces.size() || edge.faceIndices[1] >= hull.faces.size())
             continue;
-
-        const Eigen::Vector3f& normal0 = hull.faces[edge.faceIndices[0]].normal;
-        const Eigen::Vector3f& normal1 = hull.faces[edge.faceIndices[1]].normal;
-
-        // Ignore triangulation diagonals: they are shared by coplanar triangles,
-        // but they are not real convex-polyhedron feature edges.
-        if (normal0.dot(normal1) > 1.0f - 1e-4f)
+        if (edge.faceIndices[0] == edge.faceIndices[1])
             continue;
 
         hull.edges.push_back(edge);

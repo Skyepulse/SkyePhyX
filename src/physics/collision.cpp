@@ -229,7 +229,7 @@ namespace CollisionSpace
         for (int i = 0; i < N; i++)
         {
             const HullFace& faceA = hullA.faces[i];
-            if (faceA.vertexIndices[0] >= hullA.vertices.size())
+            if (faceA.vertexIndices.empty() || faceA.vertexIndices[0] >= hullA.vertices.size())
                 continue;
 
             Eigen::Vector3f planeNormal = normalMatrixA * faceA.normal;
@@ -382,7 +382,8 @@ namespace CollisionSpace
         std::vector<Eigen::Vector3f> incidentPolygon;
         incidentPolygon.reserve(3);
         const HullFace& incidentFace = hullB.faces[incidentFaceIndex];
-        for (int j = 0; j < 3; j++)
+        incidentPolygon.reserve(incidentFace.vertexIndices.size());
+        for (size_t j = 0; j < incidentFace.vertexIndices.size(); ++j)
         {
             if (incidentFace.vertexIndices[j] >= hullB.vertices.size())
                 return;
@@ -390,8 +391,11 @@ namespace CollisionSpace
             incidentPolygon.push_back(transformB.TransformPoint(hullB.vertices[incidentFace.vertexIndices[j]].position));
         }
 
-        Eigen::Vector3f referenceVertices[3];
-        for (int j = 0; j < 3; j++)
+        std::vector<Eigen::Vector3f> referenceVertices(referenceFace.vertexIndices.size());
+        if (referenceVertices.size() < 3)
+            return;
+
+        for (size_t j = 0; j < referenceFace.vertexIndices.size(); ++j)
         {
             if (referenceFace.vertexIndices[j] >= hullA.vertices.size())
                 return;
@@ -399,9 +403,9 @@ namespace CollisionSpace
             referenceVertices[j] = transformA.TransformPoint(hullA.vertices[referenceFace.vertexIndices[j]].position);
         }
 
-        for (int j = 0; j < 3; j++)
+        for (size_t j = 0; j < referenceVertices.size(); ++j)
         {
-            const Eigen::Vector3f edge = referenceVertices[(j + 1) % 3] - referenceVertices[j];
+            const Eigen::Vector3f edge = referenceVertices[(j + 1) % referenceVertices.size()] - referenceVertices[j];
             const Eigen::Vector3f sidePlaneNormal = edge.cross(referenceNormal);
             const float sidePlaneOffset = sidePlaneNormal.dot(referenceVertices[j]);
             incidentPolygon = ClipPolygonAgainstPlane(incidentPolygon, sidePlaneNormal, sidePlaneOffset);

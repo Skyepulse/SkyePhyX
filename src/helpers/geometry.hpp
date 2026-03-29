@@ -25,7 +25,7 @@ struct HullVertex
 
 struct HullFace
 {
-    uint32_t vertexIndices[3] = { 0u, 0u, 0u };
+    std::vector<uint32_t> vertexIndices;
     Eigen::Vector3f normal = Eigen::Vector3f::Zero();
     float planeOffset = 0.0f;
 };
