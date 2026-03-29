@@ -44,6 +44,8 @@ struct CollisionResult
 //================================//
 namespace CollisionSpace
 {
+    CollisionResult CollisionMeshMesh(const Mesh* A, const Mesh* B);
+    CollisionResult CollisionBoxBox(const Mesh* A, const Mesh* B);
     CollisionResult CollisionHullHull(const Mesh* A, const Mesh* B);
 }
 
