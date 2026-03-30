@@ -972,10 +972,17 @@ static void Stacking(Solver* solver, Camera* camera, const LevelParameters& para
 //================================//
 static void Capsules(Solver* solver, Camera* camera, const LevelParameters& params)
 {
+    auto makeRotation = [](float degX, float degY, float degZ)
+    {
+        return Eigen::AngleAxisf(degY * (float)M_PI / 180.0f, Eigen::Vector3f::UnitY()) *
+               Eigen::AngleAxisf(degX * (float)M_PI / 180.0f, Eigen::Vector3f::UnitX()) *
+               Eigen::AngleAxisf(degZ * (float)M_PI / 180.0f, Eigen::Vector3f::UnitZ());
+    };
+
     Mesh* ground = solver->AddBody(
-        ModelType_Cube, 1.0f, 1.0f,
+        ModelType_Cube, 1.0f, 0.8f,
         Eigen::Vector3f(0.0f, -10.0f, 0.0f),
-        Eigen::Vector3f(28.0f, 1.0f, 28.0f),
+        Eigen::Vector3f(40.0f, 1.0f, 20.0f),
         Eigen::Vector3f::Zero(),
         Quaternionf::Identity(),
         Eigen::Vector3f::Zero(),
@@ -984,44 +991,55 @@ static void Capsules(Solver* solver, Camera* camera, const LevelParameters& para
     );
     ground->name = "Ground";
 
-    Eigen::Vector3f posA(0.0f, -5.0f, 0.0f);
-    Eigen::Vector3f posB(-5.0f, -5.0f, 0.0f);
-    Eigen::Vector3f posC(5.0f, -5.0f, 0.0f);
+    // Two slightly descending rows of static capsules form a rail.
+    const int railCount = 8;
+    const float railSpacing = 2.6f;
+    const float railHalfGap = 1.45f;
+    const Eigen::Vector3f railCapsuleScale(2.4f, 2.4f, 2.4f);
+    const Eigen::Vector3f railDirection = Eigen::Vector3f(1.0f, -0.24f, 0.0f).normalized();
+    const Quaternionf railRotation = Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitY(), railDirection);
+    const Quaternionf rollingCapsuleRotation = Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitY(), Eigen::Vector3f::UnitZ());
+    const Eigen::Vector3f railStart = Eigen::Vector3f(-8.5f, 7.8f, 0.0f);
 
-    Eigen::Vector3f commonScale(1.0f, 1.0f, 1.0f);
+    for (int i = 0; i < railCount; ++i)
+    {
+        const Eigen::Vector3f railCenter = railStart + railDirection * (railSpacing * i);
 
-    Mesh* capsuleA = solver->AddBody(
-        ModelType_Capsule, 1.0f, 0.5f,
-        posA, commonScale,
-        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
-        Quaternionf::Identity(),
-        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        for (int side = 0; side < 2; ++side)
+        {
+            const float z = (side == 0) ? -railHalfGap : railHalfGap;
+            Mesh* railCapsule = solver->AddBody(
+                ModelType_Capsule, 1.0f, 1.0f,
+                railCenter + Eigen::Vector3f(0.0f, 0.0f, z),
+                railCapsuleScale,
+                Eigen::Vector3f::Zero(),
+                railRotation,
+                Eigen::Vector3f::Zero(),
+                true,
+                (side == 0)
+                    ? Eigen::Vector3f(0.35f, 0.65f, 0.95f)
+                    : Eigen::Vector3f(0.95f, 0.55f, 0.30f)
+            );
+            railCapsule->name = "Rail_" + std::to_string(side) + "_" + std::to_string(i);
+        }
+    }
+
+    // Rolling capsule spanning the rail gap so that its hemispherical caps ride on the rails.
+    const Eigen::Vector3f bigCapsuleCenter = railStart + Eigen::Vector3f(-0.9f, 1.35f, 0.0f);
+    Mesh* bigCapsule = solver->AddBody(
+        ModelType_Capsule, 1.0f, 1.0f,
+        bigCapsuleCenter,
+        Eigen::Vector3f(4.0f, 4.0f, 4.0f),
+        railDirection * 1.8f,
+        rollingCapsuleRotation,
+        Eigen::Vector3f(0.0f, 0.0f, 7.0f),
         false,
-        Eigen::Vector3f(0.92f, 0.28f, 0.34f)
+        Eigen::Vector3f(0.92f, 0.90f, 0.35f)
     );
+    bigCapsule->name = "RollingCapsule";
 
-    Mesh* capsuleB = solver->AddBody(
-        ModelType_Capsule, 1.0f, 0.5f,
-        posB, commonScale,
-        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
-        Quaternionf::Identity(),
-        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
-        false,
-        Eigen::Vector3f(0.28f, 0.68f, 0.88f)
-    );
-
-    Mesh* capsuleC = solver->AddBody(
-        ModelType_Capsule, 1.0f, 0.5f,
-        posC, commonScale,
-        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
-        Quaternionf::Identity(),
-        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
-        false,
-        Eigen::Vector3f(0.42f, 0.48f, 0.58f)
-    );
-
-    camera->SetPosition(Eigen::Vector3f(0.0f, -2.0f, 25.0f));
-    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+    camera->SetPosition(Eigen::Vector3f(0.0f, 2.0f, 24.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, -0.12f, -1.0f).normalized());
 }
 
 //================================//

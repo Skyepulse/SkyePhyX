@@ -54,6 +54,10 @@ namespace CollisionSpace
     CollisionResult CollisionSphereHull(const Mesh* A, const Mesh* B);
     CollisionResult CollisionBoxBox(const Mesh* A, const Mesh* B);
     CollisionResult CollisionHullHull(const Mesh* A, const Mesh* B);
+    CollisionResult CollisionSphereCapsule(const Mesh* A, const Mesh* B);
+    CollisionResult CollisionBoxCapsule(const Mesh* A, const Mesh* B);
+    CollisionResult CollisionCapsuleCapsule(const Mesh* A, const Mesh* B);
+    CollisionResult CollisionHullCapsule(const Mesh* A, const Mesh* B);
 }
 
 #endif // COLLISION_HPP
