@@ -881,115 +881,97 @@ static void Stacking(Solver* solver, Camera* camera, const LevelParameters& para
     const float friction = 1.0f;
     const Eigen::Vector3f towerCenter(0.0f, 0.0f, 0.0f);
 
-    Mesh* body = nullptr;
+    // two capsules rotated 90 degree on x, with height 1 (radii 0.5)
+    Mesh* capsule1 = solver->AddBody(
+        ModelType_Capsule, 1.0f, friction,
+        towerCenter + Eigen::Vector3f(-3.0f, groundTop + 0.55f, 0.0f),
+        Eigen::Vector3f(2.f, 2.f, 2.f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(90.0f, 0.0f, 0.0f),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.78f, 0.28f, 0.88f)
+    );
 
-    body = solver->AddBody(
+    Mesh* capsule2 = solver->AddBody(
+        ModelType_Capsule, 1.0f, friction,
+        towerCenter + Eigen::Vector3f(3.0f, groundTop + 0.55f, 0.0f),
+        Eigen::Vector3f(2.f, 2.f, 2.f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(90.0f, 0.0f, 0.0f),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.78f, 0.28f, 0.88f)
+    );
+
+    // Large box bridging the two capsules,
+    Mesh* box = solver->AddBody(
         ModelType_Cube, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x(), groundTop + 0.75f, towerCenter.z()),
-        Eigen::Vector3f(5.5f, 1.5f, 5.5f),
+        towerCenter + Eigen::Vector3f(0.0f, groundTop + 1.55f, 0.0f),
+        Eigen::Vector3f(8.f, 1.f, 2.f),
         Eigen::Vector3f::Zero(),
-        makeRotation(0.0f, 12.0f, 0.0f),
-        Eigen::Vector3f::Zero(),
-        false,
-        Eigen::Vector3f(0.42f, 0.48f, 0.58f)
-    );
-    body->name = "Stack_BaseBox";
-
-    body = solver->AddBody(
-        ModelType_TestConvexMesh, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x(), groundTop + 2.85f, towerCenter.z()),
-        Eigen::Vector3f(2.5f, 2.5f, 2.5f),
-        Eigen::Vector3f::Zero(),
-        makeRotation(0.0f, -18.0f, 0.0f),
+        makeRotation(0.0f, 0.0f, 0.0f),
         Eigen::Vector3f::Zero(),
         false,
-        Eigen::Vector3f(0.95f, 0.55f, 0.24f)
+        Eigen::Vector3f(0.28f, 0.78f, 0.55f)
     );
-    body->name = "Stack_Convex_0";
 
-    body = solver->AddBody(
-        ModelType_Sphere, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x() - 1.15f, groundTop + 4.55f, towerCenter.z() + 0.45f),
-        Eigen::Vector3f(1.4f, 1.4f, 1.4f),
-        Eigen::Vector3f::Zero(),
-        Quaternionf::Identity(),
-        Eigen::Vector3f::Zero(),
-        false,
-        Eigen::Vector3f(0.95f, 0.86f, 0.30f)
-    );
-    body->name = "Stack_Sphere_Left";
-
-    body = solver->AddBody(
-        ModelType_Sphere, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x() + 1.15f, groundTop + 4.55f, towerCenter.z() - 0.45f),
-        Eigen::Vector3f(1.4f, 1.4f, 1.4f),
-        Eigen::Vector3f::Zero(),
-        Quaternionf::Identity(),
-        Eigen::Vector3f::Zero(),
-        false,
-        Eigen::Vector3f(0.96f, 0.90f, 0.42f)
-    );
-    body->name = "Stack_Sphere_Right";
-
-    body = solver->AddBody(
+    // Box on right side of the bridge
+    Mesh* boxOnBridge = solver->AddBody(
         ModelType_Cube, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x(), groundTop + 5.9f, towerCenter.z()),
-        Eigen::Vector3f(4.4f, 0.9f, 1.6f),
+        towerCenter + Eigen::Vector3f(2.0f, groundTop + 3.1f, 0.0f),
+        Eigen::Vector3f(2.f, 2.f, 2.f),
         Eigen::Vector3f::Zero(),
-        makeRotation(0.0f, 34.0f, 0.0f),
-        Eigen::Vector3f::Zero(),
-        false,
-        Eigen::Vector3f(0.28f, 0.68f, 0.88f)
-    );
-    body->name = "Stack_BoxBridge";
-
-    body = solver->AddBody(
-        ModelType_TestConvexMesh, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x() + 0.35f, groundTop + 7.55f, towerCenter.z() - 0.20f),
-        Eigen::Vector3f(2.0f, 2.0f, 2.0f),
-        Eigen::Vector3f::Zero(),
-        makeRotation(18.0f, 42.0f, -10.0f),
+        makeRotation(0.0f, 0.0f, 0.0f),
         Eigen::Vector3f::Zero(),
         false,
-        Eigen::Vector3f(0.92f, 0.28f, 0.34f)
+        Eigen::Vector3f(0.88f, 0.78f, 0.28f)
     );
-    body->name = "Stack_Convex_1";
 
-    body = solver->AddBody(
+    // sphere on left side of the bridge
+    Mesh* sphereOnBridge = solver->AddBody(
         ModelType_Sphere, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x() - 0.65f, groundTop + 9.05f, towerCenter.z() + 0.10f),
-        Eigen::Vector3f(1.1f, 1.1f, 1.1f),
+        towerCenter + Eigen::Vector3f(-2.0f, groundTop + 3.1f, 0.0f),
+        Eigen::Vector3f(2.f, 2.f, 2.f),
         Eigen::Vector3f::Zero(),
-        Quaternionf::Identity(),
+        makeRotation(0.0f, 0.0f, 0.0f),
         Eigen::Vector3f::Zero(),
         false,
-        Eigen::Vector3f(0.88f, 0.78f, 0.24f)
+        Eigen::Vector3f(0.92f, 0.90f, 0.35f)
     );
-    body->name = "Stack_Sphere_TopSupport";
 
-    body = solver->AddBody(
+    Mesh* box2 = solver->AddBody(
         ModelType_Cube, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x() + 0.15f, groundTop + 10.25f, towerCenter.z() + 0.05f),
-        Eigen::Vector3f(2.3f, 0.8f, 2.0f),
+        towerCenter + Eigen::Vector3f(0.0f, groundTop + 4.65f, 0.0f),
+        Eigen::Vector3f(8.f, 1.f, 2.f),
         Eigen::Vector3f::Zero(),
-        makeRotation(0.0f, -22.0f, 0.0f),
+        makeRotation(0.0f, 0.0f, 0.0f),
         Eigen::Vector3f::Zero(),
         false,
-        Eigen::Vector3f(0.56f, 0.62f, 0.78f)
+        Eigen::Vector3f(0.78f, 0.28f, 0.88f)
     );
-    body->name = "Stack_CapBox";
 
-    body = solver->AddBody(
+    Mesh* convexMesh = solver->AddBody(
         ModelType_TestConvexMesh, 1.0f, friction,
-        Eigen::Vector3f(towerCenter.x() + 0.05f, groundTop + 11.75f, towerCenter.z()),
-        Eigen::Vector3f(1.4f, 1.4f, 1.4f),
+        towerCenter + Eigen::Vector3f(0.0f, groundTop + 6.2f, 0.1f),
+        Eigen::Vector3f(2.4f, 2.4f, 2.4f),
         Eigen::Vector3f::Zero(),
-        makeRotation(-12.0f, 10.0f, 16.0f),
+        makeRotation(0.f, 0.f, 0.f),
+        Eigen::Vector3f(1.4f, -0.4f, 0.8f),
+        false,
+        Eigen::Vector3f(0.92f, 0.24f, 0.32f)
+    );
+
+    Mesh* capsuleTop = solver->AddBody(
+        ModelType_Capsule, 0.2f, friction,
+        towerCenter + Eigen::Vector3f(0.0f, groundTop + 9.0f, 0.0f),
+        Eigen::Vector3f(3.f, 3.0f, 3.0f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(90.f, 0.f, 0.f),
         Eigen::Vector3f::Zero(),
         false,
-        Eigen::Vector3f(0.30f, 0.82f, 0.56f)
+        Eigen::Vector3f(0.78f, 0.28f, 0.88f)
     );
-    body->name = "Stack_TopConvex";
 
     camera->SetPosition(Eigen::Vector3f(0.0f, -0.5f, 30.0f));
     camera->LookAtDirection(Eigen::Vector3f(0.0f, -0.02f, -1.0f).normalized());
