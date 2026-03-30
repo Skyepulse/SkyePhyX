@@ -909,7 +909,8 @@ void RenderEngine::BuildGeometryAtlas()
     std::vector<Entry> entries = {
         { ModelType_Cube, this->solver->GetModelMeshData(ModelType_Cube) },
         { ModelType_Sphere, this->solver->GetModelMeshData(ModelType_Sphere) },
-        { ModelType_TestConvexMesh, this->solver->GetModelMeshData(ModelType_TestConvexMesh) }
+        { ModelType_TestConvexMesh, this->solver->GetModelMeshData(ModelType_TestConvexMesh) },
+        { ModelType_Capsule, this->solver->GetModelMeshData(ModelType_Capsule) },
     };
 
     uint32_t totalVertices = 0;

@@ -970,6 +970,61 @@ static void Stacking(Solver* solver, Camera* camera, const LevelParameters& para
 }
 
 //================================//
+static void Capsules(Solver* solver, Camera* camera, const LevelParameters& params)
+{
+    Mesh* ground = solver->AddBody(
+        ModelType_Cube, 1.0f, 1.0f,
+        Eigen::Vector3f(0.0f, -10.0f, 0.0f),
+        Eigen::Vector3f(28.0f, 1.0f, 28.0f),
+        Eigen::Vector3f::Zero(),
+        Quaternionf::Identity(),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.82f, 0.84f, 0.88f)
+    );
+    ground->name = "Ground";
+
+    Eigen::Vector3f posA(0.0f, -5.0f, 0.0f);
+    Eigen::Vector3f posB(-5.0f, -5.0f, 0.0f);
+    Eigen::Vector3f posC(5.0f, -5.0f, 0.0f);
+
+    Eigen::Vector3f commonScale(1.0f, 1.0f, 1.0f);
+
+    Mesh* capsuleA = solver->AddBody(
+        ModelType_Capsule, 1.0f, 0.5f,
+        posA, commonScale,
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        Quaternionf::Identity(),
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        false,
+        Eigen::Vector3f(0.92f, 0.28f, 0.34f)
+    );
+
+    Mesh* capsuleB = solver->AddBody(
+        ModelType_Capsule, 1.0f, 0.5f,
+        posB, commonScale,
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        Quaternionf::Identity(),
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        false,
+        Eigen::Vector3f(0.28f, 0.68f, 0.88f)
+    );
+
+    Mesh* capsuleC = solver->AddBody(
+        ModelType_Capsule, 1.0f, 0.5f,
+        posC, commonScale,
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        Quaternionf::Identity(),
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        false,
+        Eigen::Vector3f(0.42f, 0.48f, 0.58f)
+    );
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, -2.0f, 25.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
+}
+
+//================================//
 static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
 {
     DefaultScene,
@@ -986,7 +1041,8 @@ static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
     Particles,
     Spheres,
     TestConvexMeshShowcase,
-    Stacking
+    Stacking,
+    Capsules
 };
 
 //================================//
@@ -1005,9 +1061,11 @@ static const char* names[] = {
     "Particles",
     "Spheres",
     "TestConvexMeshShowcase",
-    "Stacking"
+    "Stacking",
+    "Capsules"
+
 };
 
-static const int numLevels = 15;
+static const int numLevels = 16;
 
 #endif // levels.h

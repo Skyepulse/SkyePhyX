@@ -157,20 +157,43 @@ Mesh* Solver::AddBody(ModelType modelType, float density, float friction, const 
         switch(modelType)
         {
             case ModelType_Cube:
+            {
                 newMesh->mass = density * scale.x() * scale.y() * scale.z();
                 I = (newMesh->mass / 12.0f) * Eigen::Vector3f(sy2 + sz2, sx2 + sz2, sx2 + sy2);
                 break;
+            }
             case ModelType_Sphere:
+            {
                 newMesh->mass = density * (4.0f / 3.0f) * M_PI * r * r * r;
                 
                 // ensure uniform scaling
                 newMesh->transform.SetScale(Eigen::Vector3f(scale.x(), scale.x(), scale.x()));
                 I = Eigen::Vector3f::Constant((2.0f / 5.0f) * newMesh->mass * r * r);
                 break;
+            }
+            case ModelType_Capsule:
+            {
+                const float s  = scale.x();
+                const float s2 = s * s;
+                const float s3 = s2 * s;
+                const float s5 = s3 * s2;
+                const float pi = float(M_PI);
+
+                newMesh->mass = density * pi * (5.0f / 96.0f) * s3;
+                newMesh->transform.SetScale(Eigen::Vector3f(s, s, s));
+
+                const float Iaxial = density * pi * (23.0f / 15360.0f) * s5;
+                const float Itrans = density * pi * (121.0f / 30720.0f) * s5;
+
+                I = Eigen::Vector3f(Itrans, Iaxial, Itrans);
+                break;
+            }
             default:
+            {
                 newMesh->mass = density * scale.x() * scale.y() * scale.z();
                 I = (newMesh->mass / 12.0f) * Eigen::Vector3f(sy2 + sz2, sx2 + sz2, sx2 + sy2);
                 break;
+            }
         }
 
         newMesh->inertiaTensorBody = I.asDiagonal();

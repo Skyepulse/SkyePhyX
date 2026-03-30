@@ -364,7 +364,7 @@ namespace GeometryHelpers
         outModelGeometry.perModelLocalAABBs.clear();
         outModelGeometry.perModelMeshData.clear();
 
-        for (ModelType modelType : { ModelType_Cube, ModelType_Sphere, ModelType_TestConvexMesh })
+        for (ModelType modelType : { ModelType_Cube, ModelType_Sphere, ModelType_TestConvexMesh, ModelType_Capsule })
         {
             MeshData meshData = GeometryGenerator::GenerateMeshDataForModelType(modelType);
             outModelGeometry.perModelMeshData[modelType] = meshData;

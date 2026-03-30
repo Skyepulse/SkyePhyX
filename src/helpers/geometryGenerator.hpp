@@ -15,7 +15,8 @@ enum ModelType
 {
     ModelType_Cube = 0,
     ModelType_Sphere = 1,
-    ModelType_TestConvexMesh = 2
+    ModelType_TestConvexMesh = 2,
+    ModelType_Capsule = 3,
 };
 
 //================================//
@@ -136,6 +137,92 @@ namespace GeometryGenerator
     }
 
     //================================//
+    inline MeshData GenerateCapsule(uint32_t hemiStacks = 8, uint32_t bodyStacks = 1, uint32_t slices = 32)
+    {
+        constexpr float height = 1.0f;
+        constexpr float radius = 0.25f;
+        constexpr float cylinderHeight = height - 2.0f * radius;
+        constexpr float halfCylinder   = cylinderHeight * 0.5f;
+
+        MeshData mesh;
+
+        const uint32_t ringCount = 2 * hemiStacks + bodyStacks + 1;
+        const uint32_t quadRows  = ringCount - 1;
+
+        mesh.vertices.reserve(ringCount * (slices + 1));
+        mesh.indices.reserve(quadRows * slices * 6);
+
+        uint32_t ring = 0;
+
+        auto PushRing = [&](float y, float ringRadius, float normalY, float normalXZ)
+        {
+            for (uint32_t j = 0; j <= slices; ++j)
+            {
+                float theta = 2.0f * static_cast<float>(M_PI) * static_cast<float>(j) / static_cast<float>(slices);
+                float c = std::cos(theta);
+                float s = std::sin(theta);
+
+                Vertex v;
+                v.normal   = { normalXZ * c, normalY, normalXZ * s };
+                v.position = { ringRadius * c, y, ringRadius * s };
+                v.uv       = { static_cast<float>(j) / static_cast<float>(slices), static_cast<float>(ring) / static_cast<float>(quadRows) };
+
+                mesh.vertices.push_back(v);
+            }
+
+            ring++;
+        };
+
+        // Top -> ring of capsule
+        for (uint32_t i = 0; i <= hemiStacks; ++i)
+        {
+            float a = 0.5f * static_cast<float>(M_PI) * static_cast<float>(i) / static_cast<float>(hemiStacks);
+            float sinA = std::sin(a);
+            float cosA = std::cos(a);
+
+            float y          = halfCylinder + cosA * radius;
+            float ringRadius = sinA * radius;
+
+            PushRing(y, ringRadius, cosA, sinA);
+        }
+
+        // Body of capsule
+        for (uint32_t i = 1; i <= bodyStacks; ++i)
+        {
+            float t = static_cast<float>(i) / static_cast<float>(bodyStacks);
+            float y = halfCylinder - t * cylinderHeight;
+
+            PushRing(y, radius, 0.0f, 1.0f);
+        }
+
+        // Ring of capsule -> bottom
+        for (uint32_t i = 0; i <= hemiStacks; ++i)
+        {
+            float a = 0.5f * static_cast<float>(M_PI) * static_cast<float>(i) / static_cast<float>(hemiStacks);
+            float sinA = std::sin(a);
+            float cosA = std::cos(a);
+
+            float y          = -halfCylinder - sinA * radius;
+            float ringRadius =  cosA * radius;
+
+            PushRing(y, ringRadius, -sinA, cosA);
+        }
+
+        for (uint32_t i = 0; i < quadRows; ++i)
+        {
+            for (uint32_t j = 0; j < slices; ++j)
+            {
+                uint32_t a = i * (slices + 1) + j;
+                uint32_t b = a + (slices + 1);
+
+                mesh.indices.insert(mesh.indices.end(), { a, a + 1, b, a + 1, b + 1, b });
+            }
+        }
+
+        return mesh;
+    }
+
+    //================================//
     inline MeshData GenerateTestConvexMesh()
     {
         MeshData mesh;
@@ -225,6 +312,8 @@ namespace GeometryGenerator
                 return GenerateSphere(32, 16);
             case ModelType_TestConvexMesh:
                 return GenerateTestConvexMesh();
+            case ModelType_Capsule:
+                return GenerateCapsule(16, 1, 32);
             default:
                 return MeshData{};
         }
