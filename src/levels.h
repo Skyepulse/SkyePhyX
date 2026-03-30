@@ -825,6 +825,32 @@ static void TestConvexMeshShowcase(Solver* solver, Camera* camera, const LevelPa
     );
     sphere->name = "SphereVsConvex";
 
+    // static capsule standing 
+    Mesh* capsule = solver->AddBody(
+        ModelType_Capsule, 1.0f, 0.4f,
+        Eigen::Vector3f(10.0f, groundTop + 4.0f, -5.0f),
+        Eigen::Vector3f(1.5f, 1.5f, 1.5f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(90.0f, 0.0f, 0.0f),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.78f, 0.28f, 0.88f)
+    );
+    capsule->name = "CapsuleStanding";
+
+    // falling convex to hit the capsule
+    Mesh* convexToCapsule = solver->AddBody(
+        ModelType_TestConvexMesh, 1.0f, 0.4f,
+        Eigen::Vector3f(10.0f, groundTop + 8.0f, -5.0f),
+        Eigen::Vector3f(2.0f, 2.0f, 2.0f),
+        Eigen::Vector3f::Zero(),
+        makeRotation(20.0f, -15.0f, 25.0f),
+        Eigen::Vector3f(0.0f, -1.8f, 0.0f),
+        false,
+        Eigen::Vector3f(0.88f, 0.78f, 0.28f)
+    );
+    convexToCapsule->name = "ConvexVsCapsule";
+
     camera->SetPosition(Eigen::Vector3f(0.0f, -1.5f, 34.0f));
     camera->LookAtDirection(Eigen::Vector3f(0.0f, -0.03f, -1.0f).normalized());
 }
@@ -993,13 +1019,13 @@ static void Capsules(Solver* solver, Camera* camera, const LevelParameters& para
 
     // Two slightly descending rows of static capsules form a rail.
     const int railCount = 8;
-    const float railSpacing = 2.6f;
-    const float railHalfGap = 1.45f;
+    const float railSpacing = 1.55f;
+    const float railHalfGap = 2.4f;
     const Eigen::Vector3f railCapsuleScale(2.4f, 2.4f, 2.4f);
     const Eigen::Vector3f railDirection = Eigen::Vector3f(1.0f, -0.24f, 0.0f).normalized();
     const Quaternionf railRotation = Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitY(), railDirection);
     const Quaternionf rollingCapsuleRotation = Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitY(), Eigen::Vector3f::UnitZ());
-    const Eigen::Vector3f railStart = Eigen::Vector3f(-8.5f, 7.8f, 0.0f);
+    const Eigen::Vector3f railStart = Eigen::Vector3f(-15.f, 4.0f, 0.0f);
 
     for (int i = 0; i < railCount; ++i)
     {
@@ -1025,9 +1051,9 @@ static void Capsules(Solver* solver, Camera* camera, const LevelParameters& para
     }
 
     // Rolling capsule spanning the rail gap so that its hemispherical caps ride on the rails.
-    const Eigen::Vector3f bigCapsuleCenter = railStart + Eigen::Vector3f(-0.9f, 1.35f, 0.0f);
+    const Eigen::Vector3f bigCapsuleCenter = railStart + Eigen::Vector3f(0.0f, 2.f, 0.0f);
     Mesh* bigCapsule = solver->AddBody(
-        ModelType_Capsule, 1.0f, 1.0f,
+        ModelType_Capsule, 1.0f, 0.0f,
         bigCapsuleCenter,
         Eigen::Vector3f(4.0f, 4.0f, 4.0f),
         railDirection * 1.8f,
@@ -1037,6 +1063,25 @@ static void Capsules(Solver* solver, Camera* camera, const LevelParameters& para
         Eigen::Vector3f(0.92f, 0.90f, 0.35f)
     );
     bigCapsule->name = "RollingCapsule";
+
+    int pileNum = 7;
+    float pileSpacing = 2.05f;
+    Eigen::Vector3f pileStart = Eigen::Vector3f(10.0f, -9.5f + 0.75f, 0.0f);
+
+    for (int i = 0; i < pileNum; ++i)
+    {
+        Mesh* pile = solver->AddBody(
+            ModelType_Cube, 0.2f, 0.7f,
+            pileStart + Eigen::Vector3f(0.0f, i * pileSpacing, 0.0f),
+            Eigen::Vector3f(2.0f, 2.0f, 2.0f),
+            Eigen::Vector3f::Zero(),
+            makeRotation(90.0f, 0.0f, 0.0f),
+            Eigen::Vector3f::Zero(),
+            false,
+            Eigen::Vector3f(0.95f, 0.55f, 0.22f)
+        );
+        pile->name = "PileCube_" + std::to_string(i);
+    }
 
     camera->SetPosition(Eigen::Vector3f(0.0f, 2.0f, 24.0f));
     camera->LookAtDirection(Eigen::Vector3f(0.0f, -0.12f, -1.0f).normalized());
