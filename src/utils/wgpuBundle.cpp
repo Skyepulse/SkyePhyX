@@ -7,14 +7,36 @@
 #include <string_view>
 #include <vector>
 
-namespace {
-
-std::string StringViewToString(wgpu::StringView value)
+//================================//
+std::string WgpuBundle::StringViewToString(wgpu::StringView value)
 {
     return std::string(static_cast<std::string_view>(value));
 }
 
-}  // namespace
+//================================//
+wgpu::TextureFormat WgpuBundle::ChooseSwapchainFormat(const wgpu::SurfaceCapabilities& capabilities) const
+{
+    constexpr wgpu::TextureFormat kPreferredFormats[] = {
+        wgpu::TextureFormat::BGRA8Unorm,
+        wgpu::TextureFormat::RGBA8Unorm,
+        wgpu::TextureFormat::BGRA8UnormSrgb,
+        wgpu::TextureFormat::RGBA8UnormSrgb,
+    };
+
+    for (wgpu::TextureFormat preferredFormat : kPreferredFormats)
+    {
+        for (size_t i = 0; i < capabilities.formatCount; ++i)
+        {
+            if (capabilities.formats[i] == preferredFormat)
+                return preferredFormat;
+        }
+    }
+
+    if (capabilities.formatCount == 0)
+        return wgpu::TextureFormat::Undefined;
+
+    return capabilities.formats[0];
+}
 
 //================================//
 WgpuBundle::WgpuBundle(WindowFormat windowFormat) : window(windowFormat.window), currentWidth(windowFormat.width), currentHeight(windowFormat.height)
@@ -157,7 +179,9 @@ void WgpuBundle::ConfigureSurface()
         
     wgpu::SurfaceCapabilities capabilities;
     surface.GetCapabilities(adapter, &capabilities);
-    swapchainFormat = capabilities.formats[0];
+    swapchainFormat = ChooseSwapchainFormat(capabilities);
+    if (swapchainFormat == wgpu::TextureFormat::Undefined)
+        throw std::runtime_error("Surface does not expose a compatible presentation format.");
 
     wgpu::SurfaceConfiguration config{};
     config.device = device;
@@ -178,6 +202,9 @@ void WgpuBundle::ComputeLimits()
 //================================//
 void WgpuBundle::Resize(int newWidth, int newHeight)
 {
+    if (newWidth <= 0 || newHeight <= 0)
+        return;
+        
     this->currentWidth = newWidth;
     this->currentHeight = newHeight;
     this->ConfigureSurface();

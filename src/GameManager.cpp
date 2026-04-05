@@ -1,5 +1,6 @@
 #include "GameManager.hpp"
 #include "helpers/math.hpp"
+#include "helpers/time.hpp"
 
 #include <iostream>
 #ifdef __EMSCRIPTEN__
@@ -78,45 +79,45 @@ void GameManager::TickFrame()
     if (steps == MAX_PHYSICS_STEPS)
         this->physicsAccumulator = 0.f;
 
-    using Clock = std::chrono::high_resolution_clock;
     RenderTimings& rt = this->renderEngine->renderTimings;
 
-    auto t0 = Clock::now();
-    this->renderEngine->AcquireSwapchainTexture();
+    Time::TimePoint t0 = Time::Clock::now();
+    bool success = this->renderEngine->AcquireSwapchainTexture();
+    if (!success)
+    {
+        std::cerr << "[ERROR][GameManager] Failed to acquire swapchain texture." << std::endl;
+        return;
+    }
 
-    auto t1 = Clock::now();
+    Time::TimePoint t1 = Time::Clock::now();
     this->renderEngine->SetSolverStepTime();
     this->renderEngine->UpdateInstanceBuffer();
 
-    auto t2 = Clock::now();
+    Time::TimePoint t2 = Time::Clock::now();
     this->renderEngine->UpdateLineBuffer();
     this->renderEngine->UpdateSoftBodySurfaceBuffer();
 
-    auto t3 = Clock::now();
+    Time::TimePoint t3 = Time::Clock::now();
     this->renderEngine->UpdateDebugPointBuffer();
 
-    auto t4 = Clock::now();
+    Time::TimePoint t4 = Time::Clock::now();
     this->renderEngine->Render(static_cast<void*>(&this->renderInfo));
 
-    auto t5 = Clock::now();
+    Time::TimePoint t5 = Time::Clock::now();
 #ifndef __EMSCRIPTEN__
     this->wgpuBundle->GetSurface().Present();
 #endif
     this->wgpuBundle->GetInstance().ProcessEvents();
 
-    auto t6 = Clock::now();
+    Time::TimePoint t6 = Time::Clock::now();
 
-    auto ms = [](auto start, auto end) {
-        return std::chrono::duration<float, std::milli>(end - start).count();
-    };
-
-    rt.acquireSwapchain.push(ms(t0, t1));
-    rt.updateInstances.push(ms(t1, t2));
-    rt.updateLines.push(ms(t2, t3));
-    rt.updateDebug.push(ms(t3, t4));
-    rt.render.push(ms(t4, t5));
-    rt.present.push(ms(t5, t6));
-    rt.totalFrame.push(ms(t0, t6));
+    rt.acquireSwapchain.push(Time::MillisecondsBetween(t0, t1));
+    rt.updateInstances.push(Time::MillisecondsBetween(t1, t2));
+    rt.updateLines.push(Time::MillisecondsBetween(t2, t3));
+    rt.updateDebug.push(Time::MillisecondsBetween(t3, t4));
+    rt.render.push(Time::MillisecondsBetween(t4, t5));
+    rt.present.push(Time::MillisecondsBetween(t5, t6));
+    rt.totalFrame.push(Time::MillisecondsBetween(t0, t6));
 
     this->AccumulateFrameRate();
 }

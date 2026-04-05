@@ -39,7 +39,7 @@ void RenderEngine::InitImGui()
     ImGui_ImplWGPU_InitInfo init_info = {};
     init_info.Device = device.Get();
     init_info.NumFramesInFlight = 3;
-    init_info.RenderTargetFormat = WGPUTextureFormat_BGRA8Unorm;
+    init_info.RenderTargetFormat = static_cast<WGPUTextureFormat>(this->wgpuBundle->GetSwapchainFormat());
     init_info.DepthStencilFormat = WGPUTextureFormat_Depth24Plus;
 
     ImGui_ImplWGPU_Init(&init_info);
@@ -203,7 +203,7 @@ void RenderEngine::Initialize()
 }
 
 //================================//
-void RenderEngine::AcquireSwapchainTexture()
+bool RenderEngine::AcquireSwapchainTexture()
 {
     wgpu::SurfaceTexture ct;
     wgpu::Surface surface = this->wgpuBundle->GetSurface();
@@ -213,10 +213,11 @@ void RenderEngine::AcquireSwapchainTexture()
     if (status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
         status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal)
     {
-        return;
+        return false;
     }
 
     this->currentTexture = ct;
+    return true;
 }
 
 //================================//
@@ -547,7 +548,7 @@ void RenderEngine::BuildPipeline()
     vertexState.buffers = &vertexBufferLayout;
 
     wgpu::ColorTargetState colorTarget{};
-    colorTarget.format = this->wgpuBundle->GetPreferedPresentationFormat();
+    colorTarget.format = this->wgpuBundle->GetSwapchainFormat();
     colorTarget.writeMask = wgpu::ColorWriteMask::All;
 
     wgpu::FragmentState fragmentState{};
@@ -794,7 +795,7 @@ void RenderEngine::BuildPipeline()
     vertexState.bufferCount = 1;
     vertexState.buffers = &vertexBufferLayout;
 
-    colorTarget.format = this->wgpuBundle->GetPreferedPresentationFormat();
+    colorTarget.format = this->wgpuBundle->GetSwapchainFormat();
     colorTarget.writeMask = wgpu::ColorWriteMask::All;
 
     fragmentState.module = this->debugShaderModule;
@@ -871,7 +872,7 @@ void RenderEngine::BuildPipeline()
     vertexState.bufferCount = 1;
     vertexState.buffers = &vertexBufferLayout;
 
-    colorTarget.format = this->wgpuBundle->GetPreferedPresentationFormat();
+    colorTarget.format = this->wgpuBundle->GetSwapchainFormat();
     colorTarget.writeMask = wgpu::ColorWriteMask::All;
 
     fragmentState.module = this->softBodyShaderModule;

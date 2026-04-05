@@ -163,7 +163,7 @@ public:
 
     //================================//
     void Initialize();
-    void AcquireSwapchainTexture();
+    bool AcquireSwapchainTexture();
     void Render(void* userData);
     void UpdateInstanceBuffer();
     void UpdateLineBuffer();

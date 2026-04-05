@@ -27,7 +27,7 @@ public:
     wgpu::Adapter& GetAdapter() { return this->adapter; }
     wgpu::Device& GetDevice() { return this->device; }
     wgpu::Surface& GetSurface() { return this->surface; }
-    wgpu::TextureFormat& GetSwapchainFormat() { return this->swapchainFormat; }
+    wgpu::TextureFormat GetSwapchainFormat() const { return this->swapchainFormat; }
     wgpu::Limits& GetLimits() { return this->limits; }
     GLFWwindow* GetGLFWWindow() { return this->window; }
     wgpu::RenderPassColorAttachment& GetColorAttachment(wgpu::TextureView& view)
@@ -41,12 +41,7 @@ public:
     
     wgpu::TextureFormat GetPreferedPresentationFormat() const
     {
-        if (!this->surface)
-            return wgpu::TextureFormat::Undefined;
-
-        wgpu::SurfaceCapabilities capabilities;
-        surface.GetCapabilities(adapter, &capabilities);
-        return capabilities.formats[0];
+        return this->swapchainFormat;
     }
 
     WindowFormat GetWindowFormat()
@@ -70,6 +65,8 @@ private:
     
     void InitializeInstance();
     void InitializeGraphics();
+    static std::string StringViewToString(wgpu::StringView value);
+    wgpu::TextureFormat ChooseSwapchainFormat(const wgpu::SurfaceCapabilities& capabilities) const;
 
     void ConfigureSurface();
     void Resize(int newWidth, int newHeight);
@@ -81,7 +78,7 @@ private:
 
     // Surface specifics
     wgpu::Surface surface;
-    wgpu::TextureFormat swapchainFormat;
+    wgpu::TextureFormat swapchainFormat = wgpu::TextureFormat::Undefined;
 
     // Window specifics
     GLFWwindow* window;

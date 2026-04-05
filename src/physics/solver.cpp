@@ -1,6 +1,6 @@
 #include "solver.hpp"
 #include <algorithm>
-#include <chrono>
+#include "../helpers/time.hpp"
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -477,12 +477,7 @@ void Solver::Step()
 
     SolverTimings& out = this->timings;
 
-    using Clock = std::chrono::high_resolution_clock;
-    auto elapsed = [](Clock::time_point start) 
-    {
-        return std::chrono::duration<float, std::milli>(Clock::now() - start).count();
-    };
-    auto stepStart = Clock::now();
+    Time::TimePoint stepStart = Time::Clock::now();
 
     this->RebuildPtrCaches();
 
@@ -506,17 +501,17 @@ void Solver::Step()
     }
 
     // 1. Broad phase detection
-    auto phaseStart = Clock::now();
+    Time::TimePoint phaseStart = Time::Clock::now();
     std::vector<BroadPhaseSweepPair> pairs = broadPhaseSweep();
     for (const auto& pair : pairs)
     {        
         this->AddForce(std::make_unique<Manifold>(this, pair.bodyA, pair.bodyB));
     }
 
-    out.broadPhaseMs = elapsed(phaseStart);
+    out.broadPhaseMs = Time::MillisecondsSince(phaseStart);
 
     // 1.5 Rebuild force cache after broad phase
-    phaseStart = Clock::now();
+    phaseStart = Time::Clock::now();
 
     forcePtrs.clear();
     forcePtrs.reserve(solverForces.size());
@@ -579,10 +574,10 @@ void Solver::Step()
     energyPtrs.clear();
     for (auto& e : solverEnergies) energyPtrs.push_back(e.get());
 
-    out.warmstartMs = elapsed(phaseStart);
+    out.warmstartMs = Time::MillisecondsSince(phaseStart);
 
     // 4. Bodies Warmstarting
-    phaseStart = Clock::now();
+    phaseStart = Time::Clock::now();
     for (Mesh* mesh : bodyPtrs)
     {
         mesh->angularVelocity = mesh->angularVelocity.cwiseMin(Eigen::Vector3f::Constant(MAX_ROTATION_VELOCITY)).cwiseMax(Eigen::Vector3f::Constant(-MAX_ROTATION_VELOCITY));
@@ -642,13 +637,13 @@ void Solver::Step()
             mesh->transform.SetRotation(q.normalized());
         }
     }
-    out.predictionMs = elapsed(phaseStart);
+    out.predictionMs = Time::MillisecondsSince(phaseStart);
 
     // 5. Main Iteration Loop
     out.solveConstraintsMs = 0.0f;
     out.solveEnergiesMs    = 0.0f;
     out.solveLDLTMs        = 0.0f;
-    phaseStart = Clock::now();
+    phaseStart = Time::Clock::now();
     for (int iter = 0; iter < this->numIterations; ++iter)
     {
         // 5.1 Primal
@@ -659,7 +654,7 @@ void Solver::Step()
             Matrix6f lhs = mesh->cachedGeneralizedMass / (stepValue * stepValue);
             Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
 
-            auto cStart = Clock::now();
+            Time::TimePoint cStart = Time::Clock::now();
             for (Force* force : mesh->forces)
             {
                 force->ComputeConstraints(alpha);
@@ -686,9 +681,9 @@ void Solver::Step()
                         lhs.noalias() += G;
                 }
             }
-            out.solveConstraintsMs += elapsed(cStart);
+            out.solveConstraintsMs += Time::MillisecondsSince(cStart);
 
-            auto eStart = Clock::now();
+            Time::TimePoint eStart = Time::Clock::now();
             for (Energy* energy : mesh->energies)
             {
                 energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
@@ -699,9 +694,9 @@ void Solver::Step()
                 rhs += grad;
                 lhs += hess;
             }
-            out.solveEnergiesMs += elapsed(eStart);
+            out.solveEnergiesMs += Time::MillisecondsSince(eStart);
 
-            auto lStart = Clock::now();
+            Time::TimePoint lStart = Time::Clock::now();
             ldlt.compute(lhs);
             Vector6f dx = ldlt.solve(rhs);
 
@@ -714,7 +709,7 @@ void Solver::Step()
             Quaternionf dq = QuaternionFromDifference(dx_ang, -1.f);
             Quaternionf rot = mesh->transform.GetRotation();
             mesh->transform.SetRotation((dq * rot).normalized());
-            out.solveLDLTMs += elapsed(lStart);
+            out.solveLDLTMs += Time::MillisecondsSince(lStart);
         }
 
         // 5.2 trust region rho update
@@ -757,10 +752,10 @@ void Solver::Step()
             }
         }
     }
-    out.primalDualMs = elapsed(phaseStart);
+    out.primalDualMs = Time::MillisecondsSince(phaseStart);
 
     // 6. Velocity update
-    phaseStart = Clock::now();
+    phaseStart = Time::Clock::now();
     std::vector<Mesh*> oob;
     for (Mesh* mesh : bodyPtrs)
     {
@@ -796,14 +791,14 @@ void Solver::Step()
     }
     this->emergencyStop = this->CheckExplosion();
     if (this->emergencyStop) return;
-    out.velocityUpdateMs = elapsed(phaseStart);
+    out.velocityUpdateMs = Time::MillisecondsSince(phaseStart);
 
     // 6.5 Remove out of bound bodies
     for (Mesh* m : oob)
         RemoveBody(m);
 
     // 7. Post-stabilization: alpha = 0.0f
-    phaseStart = Clock::now();
+    phaseStart = Time::Clock::now();
     if (postStabilization)
     {
         for (Mesh* mesh : bodyPtrs)
@@ -863,9 +858,9 @@ void Solver::Step()
             mesh->transform.SetRotation((dq * rot).normalized());
         }
     }
-    out.postStabMs = elapsed(phaseStart);
+    out.postStabMs = Time::MillisecondsSince(phaseStart);
 
-    out.totalSubstepMs = elapsed(stepStart);
+    out.totalSubstepMs = Time::MillisecondsSince(stepStart);
 
     // Rolling average
     timingAccumulator.push_back(out);
