@@ -38,6 +38,7 @@ public:
         tempColorAttachment.clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
         return tempColorAttachment;
     }
+    
     wgpu::TextureFormat GetPreferedPresentationFormat() const
     {
         if (!this->surface)

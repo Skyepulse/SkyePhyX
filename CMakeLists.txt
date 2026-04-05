@@ -51,7 +51,7 @@ if(MSVC)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT EMSCRIPTEN)
     target_compile_options(SkyePhyX PRIVATE
         $<$<CONFIG:Release>:-O3 -march=native -ffast-math -flto>
-        $<$<CONFIG:RelWithDebInfo>:-O3 -march=native -ffast-math -flto -g>
+        $<$<CONFIG:RelWithDebInf  o>:-O3 -march=native -ffast-math -flto -g>
     )
     target_link_options(SkyePhyX PRIVATE
         $<$<CONFIG:Release>:-flto>

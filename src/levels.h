@@ -943,7 +943,7 @@ static void Stacking(Solver* solver, Camera* camera, const LevelParameters& para
     Mesh* box2 = solver->AddBody(
         ModelType_Cube, 1.0f, friction,
         towerCenter + Eigen::Vector3f(0.0f, groundTop + 4.65f, 0.0f),
-        Eigen::Vector3f(8.f, 1.f, 2.f),
+        Eigen::Vector3f(10.f, 1.f, 3.f),
         Eigen::Vector3f::Zero(),
         makeRotation(0.0f, 0.0f, 0.0f),
         Eigen::Vector3f::Zero(),
@@ -972,6 +972,54 @@ static void Stacking(Solver* solver, Camera* camera, const LevelParameters& para
         false,
         Eigen::Vector3f(0.78f, 0.28f, 0.88f)
     );
+
+    const Eigen::Vector3f box2Center = towerCenter + Eigen::Vector3f(0.0f, groundTop + 4.65f, 0.0f);
+    const Eigen::Vector3f box2Scale(10.f, 1.f, 3.f);
+    const float box2Top = box2Center.y() + 0.5f * box2Scale.y();
+
+    const int softCubeNx = 4;
+    const int softCubeNy = 4;
+    const int softCubeNz = 4;
+    const float softCubeCellSize = 0.35f;
+    const float softCubeSpanX = (softCubeNx - 1) * softCubeCellSize;
+    const float softCubeSpanZ = (softCubeNz - 1) * softCubeCellSize;
+    const float particleHalfExtent = 0.05f;
+    const float edgeMarginX = 0.20f;
+    const float spawnClearanceY = 0.02f;
+    const float softCubeOriginY = box2Top + particleHalfExtent + spawnClearanceY;
+    const float softCubeOriginZ = box2Center.z() - 0.5f * softCubeSpanZ;
+
+    auto addSoftCube = [&](const char* prefix, float originX, const Eigen::Vector3f& color)
+    {
+        const size_t bodyStartIndex = solver->solverBodies.size();
+        makeTetVolume(
+            solver,
+            originX, softCubeOriginY, softCubeOriginZ,
+            softCubeNx, softCubeNy, softCubeNz,
+            softCubeCellSize,
+            params.E, params.nu,
+            color,
+            params.particleMass,
+            friction,
+            false
+        );
+
+        int particleIndex = 0;
+        for (size_t i = bodyStartIndex; i < solver->solverBodies.size(); ++i)
+        {
+            Mesh* body = solver->solverBodies[i].get();
+            if (!body->isParticle) continue;
+            body->name = std::string(prefix) + "_" + std::to_string(particleIndex++);
+        }
+    };
+
+    const float leftSoftCubeOriginX =
+        box2Center.x() - 0.5f * box2Scale.x() + edgeMarginX + particleHalfExtent;
+    const float rightSoftCubeOriginX =
+        box2Center.x() + 0.5f * box2Scale.x() - edgeMarginX - particleHalfExtent - softCubeSpanX;
+
+    addSoftCube("SoftCubeLeft", leftSoftCubeOriginX, Eigen::Vector3f(0.28f, 0.78f, 0.95f));
+    addSoftCube("SoftCubeRight", rightSoftCubeOriginX, Eigen::Vector3f(0.95f, 0.58f, 0.32f));
 
     camera->SetPosition(Eigen::Vector3f(0.0f, -0.5f, 30.0f));
     camera->LookAtDirection(Eigen::Vector3f(0.0f, -0.02f, -1.0f).normalized());
