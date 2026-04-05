@@ -85,7 +85,8 @@ void GameManager::TickFrame()
     bool success = this->renderEngine->AcquireSwapchainTexture();
     if (!success)
     {
-        std::cerr << "[ERROR][GameManager] Failed to acquire swapchain texture." << std::endl;
+        this->wgpuBundle->RequestSurfaceReconfigure();
+        this->renderInfo.resizeNeeded = true;
         return;
     }
 

@@ -6,6 +6,7 @@ project(SkyePhyX LANGUAGES C CXX)
 # Must be CACHE FORCE so it propagates into all subdirectories.
 if(MSVC)
     set(CMAKE_CXX_FLAGS "/std:c++17" CACHE STRING "" FORCE)
+    add_compile_options(/EHsc)
 else()
     set(CMAKE_CXX_STANDARD 17 CACHE STRING "" FORCE)
     set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL "" FORCE)

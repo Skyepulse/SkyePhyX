@@ -1,6 +1,7 @@
 #ifndef WGPU_BUNDLE_HPP
 #define WGPU_BUNDLE_HPP
 
+#include <string>
 #include <webgpu/webgpu_cpp.h>
 #ifndef __EMSCRIPTEN__
 #include <dawn/webgpu_cpp_print.h>
@@ -54,6 +55,9 @@ public:
     }
 
     void SafeCreateBuffer(const wgpu::BufferDescriptor* descriptor, wgpu::Buffer& outBuffer);
+    bool EnsureSurfaceConfigured();
+    void RequestSurfaceReconfigure() { this->surfaceNeedsReconfigure = true; }
+    bool IsSurfaceRenderable() const { return this->surface && this->currentWidth > 0 && this->currentHeight > 0; }
 
     bool SupportsTimestampQuery()
     {
@@ -68,7 +72,7 @@ private:
     static std::string StringViewToString(wgpu::StringView value);
     wgpu::TextureFormat ChooseSwapchainFormat(const wgpu::SurfaceCapabilities& capabilities) const;
 
-    void ConfigureSurface();
+    bool ConfigureSurface();
     void Resize(int newWidth, int newHeight);
 
     // WebGPU objects
@@ -80,11 +84,13 @@ private:
     wgpu::Surface surface;
     wgpu::TextureFormat swapchainFormat = wgpu::TextureFormat::Undefined;
 
-    // Window specifics
+    // Window specifics (most is dirty marking for proper acquisition or reconfiguration)
     GLFWwindow* window;
     int currentWidth;
     int currentHeight;
     bool resizeFlag = false;
+    bool surfaceConfigured = false;
+    bool surfaceNeedsReconfigure = false;
 
     wgpu::Limits limits;
 

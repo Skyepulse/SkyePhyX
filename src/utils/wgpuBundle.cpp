@@ -168,14 +168,39 @@ void WgpuBundle::InitializeInstance()
 //================================//
 void WgpuBundle::InitializeGraphics()
 {
-    this->ConfigureSurface();
+    this->EnsureSurfaceConfigured();
 }
 
 //================================//
-void WgpuBundle::ConfigureSurface()
+bool WgpuBundle::EnsureSurfaceConfigured()
 {
     if (!this->surface)
-        return;
+        return false;
+
+    if (this->currentWidth <= 0 || this->currentHeight <= 0)
+    {
+        if (this->surfaceConfigured)
+        {
+            this->surface.Unconfigure();
+            this->surfaceConfigured = false;
+        }
+        return false;
+    }
+
+    if (!this->surfaceConfigured || this->surfaceNeedsReconfigure)
+        return this->ConfigureSurface();
+
+    return true;
+}
+
+//================================//
+bool WgpuBundle::ConfigureSurface()
+{
+    if (!this->surface)
+        return false;
+
+    if (this->currentWidth <= 0 || this->currentHeight <= 0)
+        return false;
         
     wgpu::SurfaceCapabilities capabilities;
     surface.GetCapabilities(adapter, &capabilities);
@@ -191,6 +216,9 @@ void WgpuBundle::ConfigureSurface()
     config.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
 
     surface.Configure(&config);
+    this->surfaceConfigured = true;
+    this->surfaceNeedsReconfigure = false;
+    return true;
 }
 
 //================================//
@@ -202,13 +230,20 @@ void WgpuBundle::ComputeLimits()
 //================================//
 void WgpuBundle::Resize(int newWidth, int newHeight)
 {
-    if (newWidth <= 0 || newHeight <= 0)
-        return;
-        
     this->currentWidth = newWidth;
     this->currentHeight = newHeight;
-    this->ConfigureSurface();
     this->resizeFlag = true;
+    this->surfaceNeedsReconfigure = true;
+
+    if (newWidth <= 0 || newHeight <= 0)
+    {
+        if (this->surfaceConfigured)
+        {
+            this->surface.Unconfigure();
+            this->surfaceConfigured = false;
+        }
+        return;
+    }
 }
 
 //================================//

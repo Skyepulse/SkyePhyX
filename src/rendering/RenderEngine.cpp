@@ -205,14 +205,22 @@ void RenderEngine::Initialize()
 //================================//
 bool RenderEngine::AcquireSwapchainTexture()
 {
+    if (!this->wgpuBundle->EnsureSurfaceConfigured())
+        return false;
+
     wgpu::SurfaceTexture ct;
     wgpu::Surface surface = this->wgpuBundle->GetSurface();
     surface.GetCurrentTexture(&ct);
 
-    auto status = ct.status;
+    wgpu::SurfaceGetCurrentTextureStatus status = ct.status;
     if (status != wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal &&
         status != wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal)
     {
+        if (status == wgpu::SurfaceGetCurrentTextureStatus::Outdated ||
+            status == wgpu::SurfaceGetCurrentTextureStatus::Lost)
+        {
+            this->wgpuBundle->RequestSurfaceReconfigure();
+        }
         return false;
     }
 
