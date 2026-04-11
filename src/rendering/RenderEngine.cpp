@@ -2,8 +2,39 @@
 #include "../physics/solver.hpp"
 #include "../levels.h"
 #include "../GameManager.hpp"
+#include <cmath>
 #include <numeric>
 #include <iostream>
+
+//================================//
+static Eigen::Vector3f AVBDGraphColor(int colorIndex)
+{
+    if (colorIndex < 0)
+        return Eigen::Vector3f(1.0f, 1.0f, 1.0f);
+
+    const float hue = std::fmod(0.61803398875f * static_cast<float>(colorIndex), 1.0f) * 6.0f;
+    const float saturation = 0.72f;
+    const float value = 0.95f;
+    const float chroma = value * saturation;
+    const float x = chroma * (1.0f - std::abs(std::fmod(hue, 2.0f) - 1.0f));
+
+    Eigen::Vector3f rgb(value - chroma, value - chroma, value - chroma);
+
+    if (hue < 1.0f)
+        rgb += Eigen::Vector3f(chroma, x, 0.0f);
+    else if (hue < 2.0f)
+        rgb += Eigen::Vector3f(x, chroma, 0.0f);
+    else if (hue < 3.0f)
+        rgb += Eigen::Vector3f(0.0f, chroma, x);
+    else if (hue < 4.0f)
+        rgb += Eigen::Vector3f(0.0f, x, chroma);
+    else if (hue < 5.0f)
+        rgb += Eigen::Vector3f(x, 0.0f, chroma);
+    else
+        rgb += Eigen::Vector3f(chroma, 0.0f, x);
+
+    return rgb;
+}
 
 //================================//
 void RenderEngine::InitImGui()
@@ -99,6 +130,7 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
         ImGui::Checkbox("Show Force Lines", &this->visibility.showForceLines);
         ImGui::Checkbox("Show Debug Points", &this->visibility.showDebugPoints);
         ImGui::Checkbox("Show Soft Body Surface", &this->visibility.showSoftBodySurface);
+        ImGui::Checkbox("Show Body Graph Colors", &this->visibility.showBodyGraphColors);
         ImGui::TreePop();
     }
 
@@ -134,6 +166,7 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
 
     ImGui::Text("  Broad Phase:    %6.3f ms  (%4.1f%%)", t.broadPhaseMs,     100.f * t.broadPhaseMs / solverTotal);
     ImGui::Text("  Warmstart:      %6.3f ms  (%4.1f%%)", t.warmstartMs,      100.f * t.warmstartMs / solverTotal);
+    ImGui::Text("  Recolor Graph:  %6.3f ms  (%4.1f%%)", t.coloringMs,       100.f * t.coloringMs / solverTotal);
     ImGui::Text("  Prediction:     %6.3f ms  (%4.1f%%)", t.predictionMs,     100.f * t.predictionMs / solverTotal);
     ImGui::Text("  Primal+Dual:    %6.3f ms  (%4.1f%%)", t.primalDualMs,        100.f * t.primalDualMs / solverTotal);
     ImGui::Text("    Constraints:  %6.3f ms  (%4.1f%%)", t.solveConstraintsMs,  100.f * t.solveConstraintsMs / solverTotal);
@@ -155,6 +188,7 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui::Separator();
     DrawBar("Broad",      t.broadPhaseMs,     solverTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
     DrawBar("Warmstart",  t.warmstartMs,      solverTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+    DrawBar("Recolor",    t.coloringMs,       solverTotal, ImVec4(0.8f, 0.5f, 0.1f, 1.0f));
     DrawBar("Prediction", t.predictionMs,     solverTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
     DrawBar("Solve",       t.primalDualMs,        solverTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
     DrawBar(" Constraints", t.solveConstraintsMs, solverTotal, ImVec4(0.1f, 0.6f, 0.4f, 1.0f));
@@ -1292,7 +1326,7 @@ void RenderEngine::UpdateInstanceBuffer()
         body->transform.GetModelMatrix(modelMatrixBuffer);
         body->transform.GetNormalMatrix(instanceData.normalMatrix);
         Eigen::Map<Eigen::Matrix4f>(instanceData.modelMatrix) = modelMatrixBuffer;
-        Eigen::Vector3f color = body->color;
+        Eigen::Vector3f color = this->visibility.showBodyGraphColors ? AVBDGraphColor(body->avbdColor) : body->color;
         instanceData.color[0] = color.x();
         instanceData.color[1] = color.y();
         instanceData.color[2] = color.z();

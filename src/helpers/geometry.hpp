@@ -227,6 +227,7 @@ struct Mesh
     ~Mesh();
 
     int solverIndex = -1;
+    int avbdColor = -1;
 
     Transform transform;
     std::vector<Force*> forces;

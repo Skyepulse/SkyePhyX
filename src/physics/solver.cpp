@@ -5,6 +5,7 @@
 #include <iostream>
 #include <map>
 #include <functional>
+#include <numeric>
 #include "../constants.hpp"
 
 const Eigen::Vector3f GRAVITY(0.0f, -9.81f, 0.0f);
@@ -16,6 +17,32 @@ const float ENERGY_STIFFNESS_MIN = 0.01;
 const float MAX_ROTATION_VELOCITY = 50.0f;
 
 static constexpr float MAX_VELOCITY = 500.0f;
+
+static void CollectDynamicBodyLocals(
+    const std::vector<Mesh*>& linkedBodies,
+    const std::vector<int>& bodyToDynamic,
+    std::vector<int>& outLocalBodies)
+{
+    outLocalBodies.clear();
+    outLocalBodies.reserve(linkedBodies.size());
+
+    for (Mesh* body : linkedBodies)
+    {
+        if (body == nullptr || body->isStatic)
+            continue;
+
+        const int bodyIndex = body->solverIndex;
+        if (bodyIndex < 0 || bodyIndex >= static_cast<int>(bodyToDynamic.size()))
+            continue;
+
+        const int dynamicIndex = bodyToDynamic[bodyIndex];
+        if (dynamicIndex >= 0)
+            outLocalBodies.push_back(dynamicIndex);
+    }
+
+    std::sort(outLocalBodies.begin(), outLocalBodies.end());
+    outLocalBodies.erase(std::unique(outLocalBodies.begin(), outLocalBodies.end()), outLocalBodies.end());
+}
 
 //================================//
 Solver::Solver()
@@ -51,6 +78,7 @@ void Solver::Clear()
     surfaceDirty = true;
     surfaceFaces.clear();
     softBodySurfaceData.clear();
+    primalColoring.Clear();
     broadPhaseEntries.clear();
     constrainedPairCounts.clear();
     broadPhaseEntriesDirty = true;
@@ -464,6 +492,120 @@ std::vector<BroadPhaseSweepPair> Solver::broadPhaseSweep()
 }
 
 //================================//
+void Solver::RebuildPrimalColoring()
+{
+    primalColoring.Clear();
+
+    for (Mesh* body : bodyPtrs)
+        body->avbdColor = -1;
+
+    primalColoring.bodyColors.assign(bodyPtrs.size(), -1);
+
+    for (Mesh* body : bodyPtrs)
+    {
+        if (!body->isStatic)
+            primalColoring.dynamicBodyIndices.push_back(body->solverIndex);
+    }
+
+    const int dynamicBodyCount = static_cast<int>(primalColoring.dynamicBodyIndices.size());
+    if (dynamicBodyCount == 0)
+    {
+        primalColoring.colorOffsets.push_back(0);
+        return;
+    }
+
+    std::vector<int> bodyToDynamic(bodyPtrs.size(), -1);
+    for (int i = 0; i < dynamicBodyCount; ++i)
+        bodyToDynamic[primalColoring.dynamicBodyIndices[i]] = i;
+
+    std::vector<std::vector<int>> adjacency(dynamicBodyCount);
+    std::vector<int> linkedDynamicBodies;
+
+    auto registerElementBodies = [&](const std::vector<Mesh*>& linkedBodies)
+    {
+        CollectDynamicBodyLocals(linkedBodies, bodyToDynamic, linkedDynamicBodies);
+        const int count = static_cast<int>(linkedDynamicBodies.size());
+        for (int i = 0; i < count; ++i)
+        {
+            for (int j = i + 1; j < count; ++j)
+            {
+                const int bodyA = linkedDynamicBodies[i];
+                const int bodyB = linkedDynamicBodies[j];
+                adjacency[bodyA].push_back(bodyB);
+                adjacency[bodyB].push_back(bodyA);
+            }
+        }
+    };
+
+    for (Force* force : forcePtrs)
+        registerElementBodies(force->linkedBodies);
+
+    for (Energy* energy : energyPtrs)
+        registerElementBodies(energy->linkedBodies);
+
+    for (std::vector<int>& neighbors : adjacency)
+    {
+        std::sort(neighbors.begin(), neighbors.end());
+        neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
+    }
+
+    std::vector<int> localOrder(dynamicBodyCount);
+    std::iota(localOrder.begin(), localOrder.end(), 0);
+    std::sort(localOrder.begin(), localOrder.end(), [&](int a, int b)
+    {
+        const std::size_t degreeA = adjacency[a].size();
+        const std::size_t degreeB = adjacency[b].size();
+        if (degreeA != degreeB)
+            return degreeA > degreeB;
+
+        return primalColoring.dynamicBodyIndices[a] < primalColoring.dynamicBodyIndices[b];
+    });
+
+    std::vector<int> localColors(dynamicBodyCount, -1);
+    std::vector<int> usedColors(dynamicBodyCount, -1);
+
+    for (int localIndex : localOrder)
+    {
+        for (int neighbor : adjacency[localIndex])
+        {
+            const int neighborColor = localColors[neighbor];
+            if (neighborColor >= 0)
+                usedColors[neighborColor] = localIndex;
+        }
+
+        int selectedColor = 0;
+        while (selectedColor < dynamicBodyCount && usedColors[selectedColor] == localIndex)
+            ++selectedColor;
+
+        localColors[localIndex] = selectedColor;
+        if (selectedColor + 1 > primalColoring.numColors)
+            primalColoring.numColors = selectedColor + 1;
+    }
+
+    primalColoring.colorOffsets.assign(primalColoring.numColors + 1, 0);
+    for (int localIndex = 0; localIndex < dynamicBodyCount; ++localIndex)
+    {
+        const int bodyIndex = primalColoring.dynamicBodyIndices[localIndex];
+        const int color = localColors[localIndex];
+        primalColoring.bodyColors[bodyIndex] = color;
+        bodyPtrs[bodyIndex]->avbdColor = color;
+        primalColoring.colorOffsets[color + 1]++;
+    }
+
+    for (int color = 1; color <= primalColoring.numColors; ++color)
+        primalColoring.colorOffsets[color] += primalColoring.colorOffsets[color - 1];
+
+    primalColoring.colorBodyIndices.resize(dynamicBodyCount);
+    std::vector<int> writeOffsets = primalColoring.colorOffsets;
+    for (int localIndex = 0; localIndex < dynamicBodyCount; ++localIndex)
+    {
+        const int bodyIndex = primalColoring.dynamicBodyIndices[localIndex];
+        const int color = localColors[localIndex];
+        primalColoring.colorBodyIndices[writeOffsets[color]++] = bodyIndex;
+    }
+}
+
+//================================//
 void Solver::Step()
 {
     if (this->emergencyStop) return;
@@ -576,6 +718,10 @@ void Solver::Step()
 
     out.warmstartMs = Time::MillisecondsSince(phaseStart);
 
+    phaseStart = Time::Clock::now();
+    RebuildPrimalColoring();
+    out.coloringMs = Time::MillisecondsSince(phaseStart);
+
     // 4. Bodies Warmstarting
     phaseStart = Time::Clock::now();
     for (Mesh* mesh : bodyPtrs)
@@ -647,69 +793,71 @@ void Solver::Step()
     for (int iter = 0; iter < this->numIterations; ++iter)
     {
         // 5.1 Primal
-        for (Mesh* mesh : bodyPtrs)
+        for (int color = 0; color < primalColoring.numColors; ++color)
         {
-            if (mesh->isStatic) continue;
-
-            Matrix6f lhs = mesh->cachedGeneralizedMass / (stepValue * stepValue);
-            Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
-
-            Time::TimePoint cStart = Time::Clock::now();
-            for (Force* force : mesh->forces)
+            for (int colorIndex = primalColoring.colorOffsets[color]; colorIndex < primalColoring.colorOffsets[color + 1]; ++colorIndex)
             {
-                force->ComputeConstraints(alpha);
-                force->ComputeDerivatives(mesh);
+                Mesh* mesh = bodyPtrs[primalColoring.colorBodyIndices[colorIndex]];
+                Matrix6f lhs = mesh->cachedGeneralizedMass / (stepValue * stepValue);
+                Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
 
-                const int numConstraints = force->numConstraints();
-                for (int i = 0; i < numConstraints; ++i)
+                Time::TimePoint cStart = Time::Clock::now();
+                for (Force* force : mesh->forces)
                 {
-                    float lambda = isinf(force->constraintPoints[i].stiffness) ? force->constraintPoints[i].lambda : 0.f;
-                    float f = std::clamp(force->constraintPoints[i].penalty * force->constraintPoints[i].C + lambda, force->constraintPoints[i].fminMagnitude, force->constraintPoints[i].fmaxMagnitude);
+                    force->ComputeConstraints(alpha);
+                    force->ComputeDerivatives(mesh);
 
-                    Matrix6f H = force->constraintPoints[i].H;
-                    Matrix6f G = Matrix6f::Zero();
-                    for (int j = 0; j < 6; ++j)
+                    const int numConstraints = force->numConstraints();
+                    for (int i = 0; i < numConstraints; ++i)
                     {
-                        G(j, j) = H.col(j).norm() * std::abs(f);
+                        float lambda = isinf(force->constraintPoints[i].stiffness) ? force->constraintPoints[i].lambda : 0.f;
+                        float f = std::clamp(force->constraintPoints[i].penalty * force->constraintPoints[i].C + lambda, force->constraintPoints[i].fminMagnitude, force->constraintPoints[i].fmaxMagnitude);
+
+                        Matrix6f H = force->constraintPoints[i].H;
+                        Matrix6f G = Matrix6f::Zero();
+                        for (int j = 0; j < 6; ++j)
+                        {
+                            G(j, j) = H.col(j).norm() * std::abs(f);
+                        }
+
+                        const Vector6f J = force->constraintPoints[i].J;
+                        rhs += J * f;
+                        lhs.noalias() += J * J.transpose() * force->constraintPoints[i].penalty;
+
+                        if (force->includeHessian)
+                            lhs.noalias() += G;
                     }
-
-                    const Vector6f J = force->constraintPoints[i].J;
-                    rhs += J * f;
-                    lhs.noalias() += J * J.transpose() * force->constraintPoints[i].penalty;
-
-                    if (force->includeHessian)
-                        lhs.noalias() += G;
                 }
+                out.solveConstraintsMs += Time::MillisecondsSince(cStart);
+
+                Time::TimePoint eStart = Time::Clock::now();
+                for (Energy* energy : mesh->energies)
+                {
+                    energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
+
+                    const Vector6f grad = energy->grad;
+                    const Matrix6f hess = energy->hess;
+
+                    rhs += grad;
+                    lhs += hess;
+                }
+                out.solveEnergiesMs += Time::MillisecondsSince(eStart);
+
+                Time::TimePoint lStart = Time::Clock::now();
+                ldlt.compute(lhs);
+                Vector6f dx = ldlt.solve(rhs);
+
+                Eigen::Vector3f dx_lin = dx.head<3>();
+                Eigen::Vector3f dx_ang = dx.tail<3>();
+
+                Eigen::Vector3f pos = mesh->transform.GetPosition();
+                mesh->transform.SetPosition(pos - dx_lin);
+
+                Quaternionf dq = QuaternionFromDifference(dx_ang, -1.f);
+                Quaternionf rot = mesh->transform.GetRotation();
+                mesh->transform.SetRotation((dq * rot).normalized());
+                out.solveLDLTMs += Time::MillisecondsSince(lStart);
             }
-            out.solveConstraintsMs += Time::MillisecondsSince(cStart);
-
-            Time::TimePoint eStart = Time::Clock::now();
-            for (Energy* energy : mesh->energies)
-            {
-                energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
-
-                const Vector6f grad = energy->grad;
-                const Matrix6f hess = energy->hess;
-
-                rhs += grad;
-                lhs += hess;
-            }
-            out.solveEnergiesMs += Time::MillisecondsSince(eStart);
-
-            Time::TimePoint lStart = Time::Clock::now();
-            ldlt.compute(lhs);
-            Vector6f dx = ldlt.solve(rhs);
-
-            Eigen::Vector3f dx_lin = dx.head<3>();
-            Eigen::Vector3f dx_ang = dx.tail<3>();
-
-            Eigen::Vector3f pos = mesh->transform.GetPosition();
-            mesh->transform.SetPosition(pos - dx_lin);
-
-            Quaternionf dq = QuaternionFromDifference(dx_ang, -1.f);
-            Quaternionf rot = mesh->transform.GetRotation();
-            mesh->transform.SetRotation((dq * rot).normalized());
-            out.solveLDLTMs += Time::MillisecondsSince(lStart);
         }
 
         // 5.2 trust region rho update
@@ -801,61 +949,63 @@ void Solver::Step()
     phaseStart = Time::Clock::now();
     if (postStabilization)
     {
-        for (Mesh* mesh : bodyPtrs)
+        for (int color = 0; color < primalColoring.numColors; ++color)
         {
-            if (mesh->isStatic) continue;
-
-            Matrix6f lhs = mesh->cachedGeneralizedMass / (stepValue * stepValue);
-            Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
-
-            for (Force* force : mesh->forces)
+            for (int colorIndex = primalColoring.colorOffsets[color]; colorIndex < primalColoring.colorOffsets[color + 1]; ++colorIndex)
             {
-                force->ComputeConstraints(0.0f);
-                force->ComputeDerivatives(mesh);
+                Mesh* mesh = bodyPtrs[primalColoring.colorBodyIndices[colorIndex]];
+                Matrix6f lhs = mesh->cachedGeneralizedMass / (stepValue * stepValue);
+                Vector6f rhs = lhs * mesh->GetDisplacementFromInertial();
 
-                const int numConstraints = force->numConstraints();
-                for (int i = 0; i < numConstraints; ++i)
+                for (Force* force : mesh->forces)
                 {
-                    float lambda = isinf(force->constraintPoints[i].stiffness) ? force->constraintPoints[i].lambda : 0.f;
-                    float f = std::clamp(force->constraintPoints[i].penalty * force->constraintPoints[i].C + lambda, force->constraintPoints[i].fminMagnitude, force->constraintPoints[i].fmaxMagnitude);
+                    force->ComputeConstraints(0.0f);
+                    force->ComputeDerivatives(mesh);
 
-                    Matrix6f H = force->constraintPoints[i].H;
-                    Matrix6f G = Matrix6f::Zero();
-                    for (int j = 0; j < 6; ++j)
+                    const int numConstraints = force->numConstraints();
+                    for (int i = 0; i < numConstraints; ++i)
                     {
-                        G(j, j) = H.col(j).norm() * std::abs(f);
+                        float lambda = isinf(force->constraintPoints[i].stiffness) ? force->constraintPoints[i].lambda : 0.f;
+                        float f = std::clamp(force->constraintPoints[i].penalty * force->constraintPoints[i].C + lambda, force->constraintPoints[i].fminMagnitude, force->constraintPoints[i].fmaxMagnitude);
+
+                        Matrix6f H = force->constraintPoints[i].H;
+                        Matrix6f G = Matrix6f::Zero();
+                        for (int j = 0; j < 6; ++j)
+                        {
+                            G(j, j) = H.col(j).norm() * std::abs(f);
+                        }
+
+                        const Vector6f J = force->constraintPoints[i].J;
+                        rhs += J * f;
+                        lhs.noalias() += J * J.transpose() * force->constraintPoints[i].penalty;
+
+                        if (force->includeHessian)
+                            lhs.noalias() += G;
                     }
-
-                    const Vector6f J = force->constraintPoints[i].J;
-                    rhs += J * f;
-                    lhs.noalias() += J * J.transpose() * force->constraintPoints[i].penalty;
-
-                    if (force->includeHessian)
-                        lhs.noalias() += G;
                 }
+
+                for (Energy* energy : mesh->energies)
+                {
+                    energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
+
+                    const Vector6f grad = energy->grad;
+                    const Matrix6f hess = energy->hess;
+
+                    rhs += grad;
+                    lhs += hess;
+                }
+
+                Vector6f dx = lhs.ldlt().solve(rhs);
+                Eigen::Vector3f dx_lin = dx.head<3>();
+                Eigen::Vector3f dx_ang = dx.tail<3>();
+
+                Eigen::Vector3f pos = mesh->transform.GetPosition();
+                mesh->transform.SetPosition(pos - dx_lin);
+
+                Quaternionf dq = QuaternionFromDifference(dx_ang, -1.f);
+                Quaternionf rot = mesh->transform.GetRotation();
+                mesh->transform.SetRotation((dq * rot).normalized());
             }
-
-            for (Energy* energy : mesh->energies)
-            {
-                energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
-
-                const Vector6f grad = energy->grad;
-                const Matrix6f hess = energy->hess;
-
-                rhs += grad;
-                lhs += hess;
-            }
-
-            Vector6f dx = lhs.ldlt().solve(rhs);
-            Eigen::Vector3f dx_lin = dx.head<3>();
-            Eigen::Vector3f dx_ang = dx.tail<3>();
-
-            Eigen::Vector3f pos = mesh->transform.GetPosition();
-            mesh->transform.SetPosition(pos - dx_lin);
-
-            Quaternionf dq = QuaternionFromDifference(dx_ang, -1.f);
-            Quaternionf rot = mesh->transform.GetRotation();
-            mesh->transform.SetRotation((dq * rot).normalized());
         }
     }
     out.postStabMs = Time::MillisecondsSince(phaseStart);
@@ -872,6 +1022,7 @@ void Solver::Step()
     {
         avg.broadPhaseMs      += t.broadPhaseMs;
         avg.warmstartMs       += t.warmstartMs;
+        avg.coloringMs        += t.coloringMs;
         avg.predictionMs      += t.predictionMs;
         avg.primalDualMs      += t.primalDualMs;
         avg.solveConstraintsMs += t.solveConstraintsMs;
@@ -884,6 +1035,7 @@ void Solver::Step()
     float n = static_cast<float>(timingAccumulator.size());
     this->timings.broadPhaseMs      = avg.broadPhaseMs / n;
     this->timings.warmstartMs       = avg.warmstartMs / n;
+    this->timings.coloringMs        = avg.coloringMs / n;
     this->timings.predictionMs      = avg.predictionMs / n;
     this->timings.primalDualMs      = avg.primalDualMs / n;
     this->timings.solveConstraintsMs = avg.solveConstraintsMs / n;

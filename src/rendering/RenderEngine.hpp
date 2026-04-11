@@ -131,6 +131,7 @@ struct RenderVisibility
     bool showForceLines = true;
     bool showDebugPoints = true;
     bool showSoftBodySurface = true;
+    bool showBodyGraphColors = false;
 };
 
 struct MeshRenderOptions

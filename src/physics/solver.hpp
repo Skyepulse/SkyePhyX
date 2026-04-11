@@ -14,6 +14,7 @@ struct SolverTimings
 {
     float broadPhaseMs      = 0.0f;
     float warmstartMs       = 0.0f;
+    float coloringMs        = 0.0f;
     float predictionMs      = 0.0f;
     float primalDualMs      = 0.0f;
     float solveConstraintsMs = 0.0f;
@@ -54,6 +55,24 @@ struct BroadPhaseSweepEntry
     bool hasCachedAABB = false;
 };
 
+struct SolverPrimalColoring
+{
+    std::vector<int> dynamicBodyIndices;
+    std::vector<int> bodyColors;
+    std::vector<int> colorOffsets;
+    std::vector<int> colorBodyIndices;
+    int numColors = 0;
+
+    void Clear()
+    {
+        dynamicBodyIndices.clear();
+        bodyColors.clear();
+        colorOffsets.clear();
+        colorBodyIndices.clear();
+        numColors = 0;
+    }
+};
+
 //================================//
 class Solver
 {
@@ -73,6 +92,7 @@ public:
     std::vector<GPUDebugPointData> debugPointData;
     std::vector<std::array<Mesh*, 3>> surfaceFaces;
     std::vector<GPUSoftBodyVertex> softBodySurfaceData;
+    SolverPrimalColoring primalColoring;
     bool surfaceDirty = true;
 
     void Start();
@@ -177,6 +197,7 @@ private:
     void RefreshBroadPhaseEntries();
     void EnsureBroadPhaseOrder();
     std::vector<BroadPhaseSweepPair> broadPhaseSweep();
+    void RebuildPrimalColoring();
     void RegisterForcePairs(Force* force, int delta);
     bool HasConstraintPair(Mesh* meshA, Mesh* meshB) const;
     static MeshPairKey MakeMeshPairKey(Mesh* meshA, Mesh* meshB);
