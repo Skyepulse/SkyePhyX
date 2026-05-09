@@ -55,6 +55,8 @@ struct BroadPhaseSweepEntry
     bool hasCachedAABB = false;
 };
 
+// This struct stores all information of the current coloring
+// of the energy // constraint graph.
 struct SolverPrimalColoring
 {
     std::vector<int> dynamicBodyIndices;

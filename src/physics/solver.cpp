@@ -18,32 +18,6 @@ const float MAX_ROTATION_VELOCITY = 50.0f;
 
 static constexpr float MAX_VELOCITY = 500.0f;
 
-static void CollectDynamicBodyLocals(
-    const std::vector<Mesh*>& linkedBodies,
-    const std::vector<int>& bodyToDynamic,
-    std::vector<int>& outLocalBodies)
-{
-    outLocalBodies.clear();
-    outLocalBodies.reserve(linkedBodies.size());
-
-    for (Mesh* body : linkedBodies)
-    {
-        if (body == nullptr || body->isStatic)
-            continue;
-
-        const int bodyIndex = body->solverIndex;
-        if (bodyIndex < 0 || bodyIndex >= static_cast<int>(bodyToDynamic.size()))
-            continue;
-
-        const int dynamicIndex = bodyToDynamic[bodyIndex];
-        if (dynamicIndex >= 0)
-            outLocalBodies.push_back(dynamicIndex);
-    }
-
-    std::sort(outLocalBodies.begin(), outLocalBodies.end());
-    outLocalBodies.erase(std::unique(outLocalBodies.begin(), outLocalBodies.end()), outLocalBodies.end());
-}
-
 //================================//
 Solver::Solver()
 {
@@ -494,19 +468,15 @@ std::vector<BroadPhaseSweepPair> Solver::broadPhaseSweep()
 //================================//
 void Solver::RebuildPrimalColoring()
 {
+    // 1. Reset status of graph coloring
     primalColoring.Clear();
-
-    for (Mesh* body : bodyPtrs)
-        body->avbdColor = -1;
-
     primalColoring.bodyColors.assign(bodyPtrs.size(), -1);
-
     for (Mesh* body : bodyPtrs)
     {
+        body->avbdColor = -1;
         if (!body->isStatic)
             primalColoring.dynamicBodyIndices.push_back(body->solverIndex);
     }
-
     const int dynamicBodyCount = static_cast<int>(primalColoring.dynamicBodyIndices.size());
     if (dynamicBodyCount == 0)
     {
@@ -514,93 +484,105 @@ void Solver::RebuildPrimalColoring()
         return;
     }
 
-    std::vector<int> bodyToDynamic(bodyPtrs.size(), -1);
+    // 2. Build global (solver index, static bodies in) to local (dynamic bodies only) index mapping
+    std::vector<int> bodyToLocal(bodyPtrs.size(), -1);
     for (int i = 0; i < dynamicBodyCount; ++i)
-        bodyToDynamic[primalColoring.dynamicBodyIndices[i]] = i;
+        bodyToLocal[primalColoring.dynamicBodyIndices[i]] = i;
 
+    // 3. Build adjacency list of the constraint graph (static bodies are ignored since they don't need to be colored)
     std::vector<std::vector<int>> adjacency(dynamicBodyCount);
-    std::vector<int> linkedDynamicBodies;
-
-    auto registerElementBodies = [&](const std::vector<Mesh*>& linkedBodies)
+    std::vector<int> elementBodies;
+    auto addElementEdges = [&](const std::vector<Mesh*>& linkedBodies)
     {
-        CollectDynamicBodyLocals(linkedBodies, bodyToDynamic, linkedDynamicBodies);
-        const int count = static_cast<int>(linkedDynamicBodies.size());
+        elementBodies.clear();
+        elementBodies.reserve(linkedBodies.size());
+
+        for (Mesh* body : linkedBodies)
+        {
+            if (body->isStatic) continue;
+
+            const int localIndex = bodyToLocal[body->solverIndex];
+            if (std::find(elementBodies.begin(), elementBodies.end(), localIndex) == elementBodies.end())
+                elementBodies.push_back(localIndex);
+        }
+
+        const int count = static_cast<int>(elementBodies.size());
         for (int i = 0; i < count; ++i)
         {
             for (int j = i + 1; j < count; ++j)
             {
-                const int bodyA = linkedDynamicBodies[i];
-                const int bodyB = linkedDynamicBodies[j];
-                adjacency[bodyA].push_back(bodyB);
-                adjacency[bodyB].push_back(bodyA);
+                const int a = elementBodies[i];
+                const int b = elementBodies[j];
+                adjacency[a].push_back(b);
+                adjacency[b].push_back(a);
             }
         }
     };
-
     for (Force* force : forcePtrs)
-        registerElementBodies(force->linkedBodies);
-
+        addElementEdges(force->linkedBodies);
     for (Energy* energy : energyPtrs)
-        registerElementBodies(energy->linkedBodies);
+        addElementEdges(energy->linkedBodies);
 
-    for (std::vector<int>& neighbors : adjacency)
+    // 4. Important for greedy coloring to work correctly: sort and unique adjacency lists 
+    // so that the size of each list is correct (no duplicate neighbors)
+    for (auto& neighbors : adjacency)
     {
         std::sort(neighbors.begin(), neighbors.end());
         neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
     }
 
-    std::vector<int> localOrder(dynamicBodyCount);
-    std::iota(localOrder.begin(), localOrder.end(), 0);
-    std::sort(localOrder.begin(), localOrder.end(), [&](int a, int b)
+    std::vector<int> order(dynamicBodyCount);
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](int a, int b)
     {
-        const std::size_t degreeA = adjacency[a].size();
-        const std::size_t degreeB = adjacency[b].size();
-        if (degreeA != degreeB)
-            return degreeA > degreeB;
-
-        return primalColoring.dynamicBodyIndices[a] < primalColoring.dynamicBodyIndices[b];
+        return adjacency[a].size() == adjacency[b].size()
+            ? primalColoring.dynamicBodyIndices[a] < primalColoring.dynamicBodyIndices[b]
+            : adjacency[a].size() > adjacency[b].size();
     });
 
-    std::vector<int> localColors(dynamicBodyCount, -1);
+    // 5. Greedy coloring
+    // We give the neighbor
+    std::vector<int> colors(dynamicBodyCount, -1);
     std::vector<int> usedColors(dynamicBodyCount, -1);
-
-    for (int localIndex : localOrder)
+    for (int localIndex : order)
     {
         for (int neighbor : adjacency[localIndex])
         {
-            const int neighborColor = localColors[neighbor];
+            const int neighborColor = colors[neighbor];
             if (neighborColor >= 0)
                 usedColors[neighborColor] = localIndex;
         }
 
-        int selectedColor = 0;
-        while (selectedColor < dynamicBodyCount && usedColors[selectedColor] == localIndex)
-            ++selectedColor;
+        int color = 0;
+        while (usedColors[color] == localIndex)
+            ++color;
 
-        localColors[localIndex] = selectedColor;
-        if (selectedColor + 1 > primalColoring.numColors)
-            primalColoring.numColors = selectedColor + 1;
+        // Assign color to body. It is the lowest color that is not used by any neighbor.
+        colors[localIndex] = color;
+        primalColoring.numColors = std::max(primalColoring.numColors, color + 1);
     }
 
+    // 6. This is a compact start - end table
+    // To find all bodies for certain color.
     primalColoring.colorOffsets.assign(primalColoring.numColors + 1, 0);
     for (int localIndex = 0; localIndex < dynamicBodyCount; ++localIndex)
     {
         const int bodyIndex = primalColoring.dynamicBodyIndices[localIndex];
-        const int color = localColors[localIndex];
+        const int color = colors[localIndex];
         primalColoring.bodyColors[bodyIndex] = color;
         bodyPtrs[bodyIndex]->avbdColor = color;
         primalColoring.colorOffsets[color + 1]++;
     }
-
     for (int color = 1; color <= primalColoring.numColors; ++color)
         primalColoring.colorOffsets[color] += primalColoring.colorOffsets[color - 1];
 
+    // 7. Build the body index list for each color based on the compact offset table
     primalColoring.colorBodyIndices.resize(dynamicBodyCount);
     std::vector<int> writeOffsets = primalColoring.colorOffsets;
     for (int localIndex = 0; localIndex < dynamicBodyCount; ++localIndex)
     {
         const int bodyIndex = primalColoring.dynamicBodyIndices[localIndex];
-        const int color = localColors[localIndex];
+        const int color = colors[localIndex];
         primalColoring.colorBodyIndices[writeOffsets[color]++] = bodyIndex;
     }
 }
@@ -649,7 +631,6 @@ void Solver::Step()
     {        
         this->AddForce(std::make_unique<Manifold>(this, pair.bodyA, pair.bodyB));
     }
-
     out.broadPhaseMs = Time::MillisecondsSince(phaseStart);
 
     // 1.5 Rebuild force cache after broad phase

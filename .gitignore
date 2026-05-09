@@ -6,6 +6,8 @@ build-web/
 data/
 web-data/
 
+other-codebases/
+
 # Claud
 CLAUDE.md
 CODEX.md

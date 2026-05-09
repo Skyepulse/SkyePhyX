@@ -443,27 +443,13 @@ namespace GeometryHelpers
     }
 
     //================================//
-    // UV-sphere fan tessellation.
-    // Surface: nLon=6N longitude sectors × nLat=3N latitude rings + 2 poles.
-    // Innermost shell fans each surface triangle to the centre (like a 2D circle fan).
-    // Each additional shell stacks a triangular prism (3 tets) between adjacent shells.
-    //
-    // Approximate counts:
-    //   res=1 →  21 particles,   36 tets
-    //   res=2 → 149 particles,  576 tets
-    //   res=3 → 493 particles, 2268 tets
     void makeTetSphere(Solver* solver, float cx, float cy, float cz, float radius, float res, float E, float nu, const Eigen::Vector3f& color, float mass, float friction)
     {
         int N      = std::max(1, (int)std::roundf(res));
-        int nLon   = 6 * N;   // longitude sectors  (6 gives hexagonal look at N=1)
-        int nLat   = 3 * N;   // latitude body rings (poles are separate)
-        int nShells = N;       // concentric radial shells
+        int nLon   = 6 * N;
+        int nLat   = 3 * N;
+        int nShells = N;
 
-        // ── Vertex storage ──────────────────────────────────────────────────────
-        // [0] = centre
-        // Per shell s: sBase(s)+0       = south pole
-        //              sBase(s)+1       = north pole
-        //              sBase(s)+2+j*nLon+i = body ring j (j=0 near north), sector i
         int vps    = 2 + nLat * nLon;
         int nVerts = 1 + nShells * vps;
         std::vector<Mesh*> pts(nVerts, nullptr);
@@ -471,21 +457,17 @@ namespace GeometryHelpers
         auto sBase  = [&](int s)            { return 1 + s * vps; };
         auto sSouth = [&](int s)            { return sBase(s); };
         auto sNorth = [&](int s)            { return sBase(s) + 1; };
-        auto sV     = [&](int s, int j, int i) {
-            return sBase(s) + 2 + j * nLon + ((i % nLon + nLon) % nLon);
-        };
+        auto sV     = [&](int s, int j, int i) { return sBase(s) + 2 + j * nLon + ((i % nLon + nLon) % nLon); };
 
-        auto makeP = [&](float x, float y, float z) -> Mesh* {
-            Mesh* p = solver->AddParticle(mass, friction,
-                Eigen::Vector3f(x, y, z), Eigen::Vector3f::Zero(), false, color);
+        auto makeP = [&](float x, float y, float z) -> Mesh* 
+        {
+            Mesh* p = solver->AddParticle(mass, friction, Eigen::Vector3f(x, y, z), Eigen::Vector3f::Zero(), false, color);
             p->isParticle = true;
             return p;
         };
 
-        // Centre
         pts[0] = makeP(cx, cy, cz);
 
-        // Shells: radius grows linearly from radius/nShells to radius
         for (int s = 0; s < nShells; s++)
         {
             float r = radius * (s + 1) / (float)nShells;
@@ -493,7 +475,6 @@ namespace GeometryHelpers
             pts[sNorth(s)] = makeP(cx, cy + r, cz);
             for (int j = 0; j < nLat; j++)
             {
-                // theta: polar angle from north pole (0 = north, π = south)
                 float theta = (float)M_PI * (j + 1) / (float)(nLat + 1);
                 float sinT  = std::sin(theta);
                 float cosT  = std::cos(theta);
@@ -509,8 +490,6 @@ namespace GeometryHelpers
             }
         }
 
-        // ── Tet helpers ─────────────────────────────────────────────────────────
-        // Compute det(Dm) at spawn time and swap c↔d to guarantee positive volume.
         auto addTet = [&](Mesh* a, Mesh* b, Mesh* c, Mesh* d)
         {
             Eigen::Matrix3f Dm;
@@ -521,8 +500,6 @@ namespace GeometryHelpers
             solver->AddEnergy(std::make_unique<NeoHookeanFEM>(solver, a, b, c, d, E, nu));
         };
 
-        // Triangular prism (inner face P0P1P2, outer face Q0Q1Q2) → 3 tets.
-        // Schöberl decomposition; each tet gets orientation-checked by addTet.
         auto addPrism = [&](Mesh* P0, Mesh* P1, Mesh* P2,
                             Mesh* Q0, Mesh* Q1, Mesh* Q2)
         {
@@ -531,7 +508,6 @@ namespace GeometryHelpers
             addTet(P0, Q0, Q1, Q2);
         };
 
-        // ── Tet generation ───────────────────────────────────────────────────────
         for (int s = 0; s < nShells; s++)
         {
             bool fanToCenter = (s == 0);
@@ -541,14 +517,12 @@ namespace GeometryHelpers
             {
                 int i1 = (i + 1) % nLon;
 
-                // North cap: north_pole + ring j=0
                 if (fanToCenter)
                     addTet(pts[0], pts[sNorth(s)], pts[sV(s,0,i)], pts[sV(s,0,i1)]);
                 else
                     addPrism(pts[sNorth(sIn)], pts[sV(sIn,0,i)], pts[sV(sIn,0,i1)],
                              pts[sNorth(s  )], pts[sV(s,  0,i)], pts[sV(s,  0,i1)]);
 
-                // South cap: south_pole + ring j=nLat-1
                 int jS = nLat - 1;
                 if (fanToCenter)
                     addTet(pts[0], pts[sSouth(s)], pts[sV(s,jS,i)], pts[sV(s,jS,i1)]);
@@ -557,7 +531,6 @@ namespace GeometryHelpers
                              pts[sSouth(s  )], pts[sV(s,  jS,i)], pts[sV(s,  jS,i1)]);
             }
 
-            // Body quads: ring j → ring j+1, split into 2 triangles each
             for (int j = 0; j < nLat - 1; j++)
             {
                 for (int i = 0; i < nLon; i++)

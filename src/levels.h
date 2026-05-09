@@ -205,7 +205,7 @@ static void JointPlayground(Solver* solver, Camera* camera, const LevelParameter
 {
     // Pendulum
     Eigen::Vector3f commonScale(2.f, 0.7f, 0.7f);
-    Vector6f pendulumAnchors = Vector6f(INFINITY, INFINITY, INFINITY, INFINITY, 0.f, 0.f);
+    Vector6f pendulumAnchors = Vector6f(INFINITY, INFINITY, INFINITY, 0.f, 0.f, 0.f);
     Eigen::Vector3f startAnchor(0.f, 5.f, 0.f);
     int numLinks = 5;
     

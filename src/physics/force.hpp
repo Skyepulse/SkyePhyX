@@ -107,7 +107,7 @@ struct Joint : Force
     static constexpr int NUM_CONSTRAINTS = 6;
     Joint(Solver* solver, Mesh* bodyA, const Eigen::Vector3f& rA,
           Mesh* bodyB, const Eigen::Vector3f& rB,
-          const Vector6f& stiffness = Vector6f::Constant(INFINITY),
+          const Vector6f& stiffness = Vector6f(INFINITY, INFINITY, INFINITY, 0.f, 0.f, 0.f),
           const Vector6f& fractures = Vector6f::Constant(INFINITY));
 
     Eigen::Vector3f rA;

@@ -11,7 +11,6 @@
 namespace NeoHookeanMath
 {
     //================================//
-    //================================//
     SVDDecomposition svd(const Eigen::Matrix3f& F)
     {
         SVDDecomposition result{};
@@ -184,17 +183,13 @@ namespace NeoHookeanMath
             vdotg[i] = v[i].dot(gradN);
 
         Eigen::Matrix3f hessianVertex = Eigen::Matrix3f::Zero();
-        auto addOuter = [&](float lam, const Eigen::Vector3f& w)
-        {
-            hessianVertex.noalias() += lam * (w * w.transpose());
-        };
 
         // Scaling
         for (int k = 0; k < 3; k++)
         {
             const Eigen::Vector3f& c = hessDecomp.scalingVectors[k];
             Eigen::Vector3f w = c(0) * vdotg[0] * u[0] + c(1) * vdotg[1] * u[1] + c(2) * vdotg[2] * u[2];
-            addOuter(projectedEigenValues[k], w);
+            hessianVertex.noalias() += projectedEigenValues[k] * (w * w.transpose());
         }
 
         // Twist, antisymmetric 
@@ -208,7 +203,7 @@ namespace NeoHookeanMath
             int j = pairs[p][1];
 
             Eigen::Vector3f w = INV_SQRT2 * (vdotg[j] * u[i] - vdotg[i] * u[j]);
-            addOuter(projectedEigenValues[3 + p], w);
+            hessianVertex.noalias() += projectedEigenValues[3 + p] * (w * w.transpose());
         }
 
         // Flip, symmetric
@@ -219,7 +214,7 @@ namespace NeoHookeanMath
             int j = pairs[p][1];
 
             Eigen::Vector3f w = INV_SQRT2 * (vdotg[j] * u[i] + vdotg[i] * u[j]);
-            addOuter(projectedEigenValues[6 + p], w);
+            hessianVertex.noalias() += projectedEigenValues[6 + p] * (w * w.transpose());
         }
 
         return hessianVertex * restVolume;
@@ -365,21 +360,17 @@ namespace STVKMath
         }
 
         Eigen::Matrix3f hessianVertex = Eigen::Matrix3f::Zero();
-        auto addOuter = [&](float lam, const Eigen::Vector3f& w)
-        {
-            hessianVertex.noalias() += lam * (w * w.transpose());
-        };
 
         for (int k = 0; k < 2; k++)
         {
             const Eigen::Vector2f& c = hessDecomp.scalingVectors[k];
             Eigen::Vector3f w = c(0)*vdotg[0]*u[0] + c(1)*vdotg[1]*u[1];
-            addOuter(projectedEigenValues[k], w);
+            hessianVertex.noalias() += projectedEigenValues[k] * (w * w.transpose());
         }
 
         static constexpr float INV_SQRT2 = 0.70710678118f;
-        addOuter(projectedEigenValues[2], INV_SQRT2 * (vdotg[1]*u[0] - vdotg[0]*u[1]));
-        addOuter(projectedEigenValues[3], INV_SQRT2 * (vdotg[1]*u[0] + vdotg[0]*u[1]));
+        hessianVertex.noalias() += projectedEigenValues[2] * (INV_SQRT2 * (vdotg[1]*u[0] - vdotg[0]*u[1])) * (INV_SQRT2 * (vdotg[1]*u[0] - vdotg[0]*u[1]).transpose());
+        hessianVertex.noalias() += projectedEigenValues[3] * (INV_SQRT2 * (vdotg[1]*u[0] + vdotg[0]*u[1])) * (INV_SQRT2 * (vdotg[1]*u[0] + vdotg[0]*u[1]).transpose());
 
         return hessianVertex * restArea;
     }
