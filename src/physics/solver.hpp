@@ -25,6 +25,13 @@ struct SolverTimings
     float totalSubstepMs    = 0.0f;
 };
 
+struct SolverBodySolveTimings
+{
+    float constraintsMs = 0.0f;
+    float energiesMs = 0.0f;
+    float ldltMs = 0.0f;
+};
+
 //================================//
 struct BroadPhaseSweepPair
 {
@@ -191,8 +198,6 @@ private:
     std::unordered_map<MeshPairKey, int, MeshPairKeyHash> constrainedPairCounts;
     bool broadPhaseEntriesDirty = true;
 
-    Eigen::LDLT<Matrix6f> ldlt;
-
     bool CheckExplosion();
     void BuildSoftBodySurface();
     void UpdateSoftBodySurfaceData();
@@ -200,6 +205,7 @@ private:
     void EnsureBroadPhaseOrder();
     std::vector<BroadPhaseSweepPair> broadPhaseSweep();
     void RebuildPrimalColoring();
+    void SolvePrimalBody(Mesh* mesh, float solveAlpha, SolverBodySolveTimings* timings = nullptr);
     void RegisterForcePairs(Force* force, int delta);
     bool HasConstraintPair(Mesh* meshA, Mesh* meshB) const;
     static MeshPairKey MakeMeshPairKey(Mesh* meshA, Mesh* meshB);
