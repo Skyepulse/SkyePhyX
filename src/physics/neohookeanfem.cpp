@@ -91,6 +91,69 @@ void NeoHookeanFEM::ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectio
 }
 
 //================================//
+EnergyPrimalTerms NeoHookeanFEM::ComputePrimalTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho)
+{
+    EnergyPrimalTerms terms;
+
+    const Eigen::Vector3f p0 = body0->transform.GetPosition();
+    const Eigen::Vector3f p1 = body1->transform.GetPosition();
+    const Eigen::Vector3f p2 = body2->transform.GetPosition();
+    const Eigen::Vector3f p3 = body3->transform.GetPosition();
+
+    const Eigen::Matrix3f F = DeformationGradient(p0, p1, p2, p3, DmInv);
+    const float J = F.determinant();
+
+    Eigen::Vector3f gradN = Eigen::Vector3f::Zero();
+    if (mesh == body0) gradN = gradN0;
+    else if (mesh == body1) gradN = gradN1;
+    else if (mesh == body2) gradN = gradN2;
+    else if (mesh == body3) gradN = gradN3;
+
+    if (J <= 1e-6f)
+    {
+        const float stiffPenalty = lameMu + lameLambda;
+        Eigen::Matrix3f cofF;
+        cofF(0,0) =  (F(1,1)*F(2,2) - F(1,2)*F(2,1));
+        cofF(0,1) = -(F(1,0)*F(2,2) - F(1,2)*F(2,0));
+        cofF(0,2) =  (F(1,0)*F(2,1) - F(1,1)*F(2,0));
+        cofF(1,0) = -(F(0,1)*F(2,2) - F(0,2)*F(2,1));
+        cofF(1,1) =  (F(0,0)*F(2,2) - F(0,2)*F(2,0));
+        cofF(1,2) = -(F(0,0)*F(2,1) - F(0,1)*F(2,0));
+        cofF(2,0) =  (F(0,1)*F(1,2) - F(0,2)*F(1,1));
+        cofF(2,1) = -(F(0,0)*F(1,2) - F(0,2)*F(1,0));
+        cofF(2,2) =  (F(0,0)*F(1,1) - F(0,1)*F(1,0));
+
+        const Eigen::Vector3f dJdxi = cofF * gradN;
+        const float penaltyMag = stiffPenalty * (1e-6f - J);
+        terms.grad.head<3>() = -restVolume * penaltyMag * dJdxi;
+        terms.hess.block<3,3>(0,0) = restVolume * stiffPenalty * Eigen::Matrix3f::Identity();
+        return terms;
+    }
+
+    const Eigen::Matrix3f P = ComputeFirstPiolaKirchhoff(F, J, lameMu, lameLambda);
+    terms.grad.head<3>() = P * gradN * restVolume;
+
+    if (solver->exactHessian)
+    {
+        Eigen::Matrix3f exactH;
+        if (ComputeExactVertexHessian(F, J, gradN, lameMu, lameLambda, restVolume, exactH))
+            terms.hess.block<3, 3>(0, 0) = exactH;
+        return terms;
+    }
+
+    SVDDecomposition SVD = svd(F);
+    HessianDecomposition hessDecomp = ComputeEnergyHessian(SVD.S, J, lameMu, lameLambda);
+
+    float projectedEigenValues[9];
+    for (int i = 0; i < 9; ++i)
+        projectedEigenValues[i] = hessDecomp.eigenValues[i];
+    ProjectEigenvalues(projectedEigenValues, 9, projectionMode, trustRegionRho, trustRegionThreshold);
+
+    terms.hess.block<3, 3>(0, 0) = ReconstructVertexHessian(SVD, hessDecomp, projectedEigenValues, gradN, restVolume);
+    return terms;
+}
+
+//================================//
 void NeoHookeanFEM::HandleInvertedElement(Mesh* mesh, const Eigen::Matrix3f& F, float J, const Eigen::Vector3f& gradNi)
 {
     float stiffPenalty = lameMu + lameLambda;

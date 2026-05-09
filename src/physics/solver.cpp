@@ -734,22 +734,23 @@ void Solver::SolvePrimalBody(Mesh* mesh, float solveAlpha, SolverBodySolveTiming
     Time::TimePoint start = Time::Clock::now();
     for (Force* force : mesh->forces)
     {
-        force->ComputeConstraints(solveAlpha);
-        force->ComputeDerivatives(mesh);
+        ConstraintPointProperties constraintTerms[24];
+        force->ComputePrimalTerms(mesh, solveAlpha, constraintTerms);
 
         const int numConstraints = force->numConstraints();
         for (int i = 0; i < numConstraints; ++i)
         {
-            float lambda = isinf(force->constraintPoints[i].stiffness) ? force->constraintPoints[i].lambda : 0.f;
-            float f = std::clamp(force->constraintPoints[i].penalty * force->constraintPoints[i].C + lambda, force->constraintPoints[i].fminMagnitude, force->constraintPoints[i].fmaxMagnitude);
+            const ConstraintPointProperties& constraint = constraintTerms[i];
+            float lambda = isinf(constraint.stiffness) ? constraint.lambda : 0.f;
+            float f = std::clamp(constraint.penalty * constraint.C + lambda, constraint.fminMagnitude, constraint.fmaxMagnitude);
 
-            const Vector6f J = force->constraintPoints[i].J;
+            const Vector6f& J = constraint.J;
             rhs += J * f;
-            lhs.noalias() += J * J.transpose() * force->constraintPoints[i].penalty;
+            lhs.noalias() += J * J.transpose() * constraint.penalty;
 
             if (force->includeHessian)
             {
-                const Matrix6f& H = force->constraintPoints[i].H;
+                const Matrix6f& H = constraint.H;
                 Matrix6f G = Matrix6f::Zero();
                 for (int j = 0; j < 6; ++j)
                     G(j, j) = H.col(j).norm() * std::abs(f);
@@ -764,10 +765,9 @@ void Solver::SolvePrimalBody(Mesh* mesh, float solveAlpha, SolverBodySolveTiming
     start = Time::Clock::now();
     for (Energy* energy : mesh->energies)
     {
-        energy->ComputeEnergyTerms(mesh, projectionMode, trustRegionRho);
-
-        rhs += energy->grad;
-        lhs += energy->hess;
+        const EnergyPrimalTerms terms = energy->ComputePrimalTerms(mesh, projectionMode, trustRegionRho);
+        rhs += terms.grad;
+        lhs += terms.hess;
     }
     if (timings)
         timings->energiesMs += Time::MillisecondsSince(start);

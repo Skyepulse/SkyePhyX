@@ -83,6 +83,54 @@ void STVKFEM::ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectionMode,
 }
 
 //================================//
+EnergyPrimalTerms STVKFEM::ComputePrimalTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho)
+{
+    EnergyPrimalTerms terms;
+
+    const Eigen::Vector3f p0 = body0->transform.GetPosition();
+    const Eigen::Vector3f p1 = body1->transform.GetPosition();
+    const Eigen::Vector3f p2 = body2->transform.GetPosition();
+
+    const F32 F = DeformationGradient(p0, p1, p2, DmInv2D);
+
+    Eigen::Vector2f gradN;
+    if      (mesh == body0) gradN = gradN0;
+    else if (mesh == body1) gradN = gradN1;
+    else                    gradN = gradN2;
+
+    if ((p1 - p0).cross(p2 - p0).norm() < 2.f * restArea * 0.01f)
+    {
+        const float stiffPenalty = lameMu + lameLambda;
+        const F32 P = stiffPenalty * F;
+        terms.grad.head<3>() = restArea * (P * gradN);
+        terms.hess.block<3,3>(0,0) = restArea * stiffPenalty * Eigen::Matrix3f::Identity();
+        return terms;
+    }
+
+    const F32 P = ComputeFirstPiolaKirchhoff(F, lameMu, lameLambda);
+    terms.grad.head<3>() = restArea * (P * gradN);
+
+    if (solver->exactHessian)
+    {
+        Eigen::Matrix3f exactH;
+        if (ComputeExactVertexHessian(F, gradN, lameMu, lameLambda, restArea, exactH))
+            terms.hess.block<3, 3>(0, 0) = exactH;
+        return terms;
+    }
+
+    SVDDecomposition SVD = svd(F);
+    HessianDecomposition hessDecomp = ComputeEnergyHessian(SVD.S, lameMu, lameLambda);
+
+    float projectedEigenValues[4];
+    for (int i = 0; i < 4; ++i)
+        projectedEigenValues[i] = hessDecomp.eigenValues[i];
+    NeoHookeanMath::ProjectEigenvalues(projectedEigenValues, 4, projectionMode, trustRegionRho, trustRegionThreshold);
+
+    terms.hess.block<3, 3>(0, 0) = ReconstructVertexHessian(SVD, hessDecomp, projectedEigenValues, gradN, restArea);
+    return terms;
+}
+
+//================================//
 void STVKFEM::HandleInvertedElement(Mesh* mesh, const F32& F, const Eigen::Vector2f& gradN)
 {
     float stiffPenalty = lameMu + lameLambda;
