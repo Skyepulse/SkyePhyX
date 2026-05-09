@@ -8,6 +8,13 @@
 #include <array>
 #include <unordered_map>
 #include <utility>
+#include <functional>
+#if !defined(__EMSCRIPTEN__)
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#endif
 
 //================================//
 struct SolverTimings
@@ -198,6 +205,22 @@ private:
     std::unordered_map<MeshPairKey, int, MeshPairKeyHash> constrainedPairCounts;
     bool broadPhaseEntriesDirty = true;
 
+    // Worker threads pool (+ main thread) to parallelize constraint solving.
+#if !defined(__EMSCRIPTEN__)
+    std::vector<std::thread> workerThreads;
+    std::mutex parallelMutex;
+    std::condition_variable parallelCv;
+    std::condition_variable parallelDoneCv;
+    std::function<void(int)> parallelWork;
+    std::atomic<int> parallelNextIndex{0};
+    std::atomic<int> parallelRemaining{0};
+    int parallelEnd = 0;
+    int parallelWorkersDone = 0;
+    std::size_t parallelGeneration = 0;
+    bool parallelWorkReady = false;
+    bool workersStopping = false;
+#endif
+
     bool CheckExplosion();
     void BuildSoftBodySurface();
     void UpdateSoftBodySurfaceData();
@@ -205,7 +228,12 @@ private:
     void EnsureBroadPhaseOrder();
     std::vector<BroadPhaseSweepPair> broadPhaseSweep();
     void RebuildPrimalColoring();
+    void StartWorkerThreads();
+    void StopWorkerThreads();
+    void WorkerLoop();
+    void ParallelFor(int begin, int end, const std::function<void(int)>& fn);
     void SolvePrimalBody(Mesh* mesh, float solveAlpha, SolverBodySolveTimings* timings = nullptr);
+    void SolvePrimalColor(int color, float solveAlpha, SolverTimings* timings = nullptr);
     void RegisterForcePairs(Force* force, int delta);
     bool HasConstraintPair(Mesh* meshA, Mesh* meshB) const;
     static MeshPairKey MakeMeshPairKey(Mesh* meshA, Mesh* meshB);
