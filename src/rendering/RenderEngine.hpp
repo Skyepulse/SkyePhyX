@@ -115,6 +115,10 @@ struct RingAccumulator
 //================================//
 struct RenderTimings
 {
+    RingAccumulator updateTime;
+    RingAccumulator processEvents;
+    RingAccumulator physics;
+    RingAccumulator physicsSteps;
     RingAccumulator acquireSwapchain;
     RingAccumulator updateInstances;
     RingAccumulator updateLines;
@@ -122,6 +126,7 @@ struct RenderTimings
     RingAccumulator render;
     RingAccumulator present;
     RingAccumulator totalFrame;
+    RingAccumulator fullFrame;
 };
 
 struct RenderVisibility

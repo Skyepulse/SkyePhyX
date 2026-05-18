@@ -1083,12 +1083,12 @@ static void Capsules(Solver* solver, Camera* camera, const LevelParameters& para
     // Rolling capsule spanning the rail gap so that its hemispherical caps ride on the rails.
     const Eigen::Vector3f bigCapsuleCenter = railStart + Eigen::Vector3f(0.0f, 2.f, 0.0f);
     Mesh* bigCapsule = solver->AddBody(
-        ModelType_Capsule, 1.0f, 0.0f,
+        ModelType_Capsule, 1.0f, 0.5f,
         bigCapsuleCenter,
         Eigen::Vector3f(4.0f, 4.0f, 4.0f),
         railDirection * 1.8f,
         rollingCapsuleRotation,
-        Eigen::Vector3f(0.0f, 0.0f, 7.0f),
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f),
         false,
         Eigen::Vector3f(0.92f, 0.90f, 0.35f)
     );

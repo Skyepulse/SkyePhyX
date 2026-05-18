@@ -97,7 +97,16 @@ bool Manifold::Initialize()
                 contactInfos[i].stick = oldInfo[j].stick;
 
                 // If sticking, reuse old local offsets for stable static friction
-                if (contactInfos[i].stick)
+                const bool sameAnchors =
+                    (oldContacts[j].rA - contactPoints[i].rA).squaredNorm() <= 1e-10f &&
+                    (oldContacts[j].rB - contactPoints[i].rB).squaredNorm() <= 1e-10f;
+                if (contactPoints[i].penetration <= COLLISION_MARGIN)
+                {
+                    for (int k = 0; k < 3; ++k)
+                        constraintPoints[i * 3 + k].lambda = 0.0f;
+                    contactInfos[i].stick = false;
+                }
+                else if (contactInfos[i].stick && sameAnchors)
                 {
                     contactPoints[i].rA = oldContacts[j].rA;
                     contactPoints[i].rB = oldContacts[j].rB;
@@ -226,8 +235,16 @@ void Manifold::ComputeConstraints(float alpha)
         constraintPoints[i * 3 + 1].C = alphaC0[1] + contactInfos[i].JacTang1A.dot(diffA) + contactInfos[i].JacTang1B.dot(diffB);
         constraintPoints[i * 3 + 2].C = alphaC0[2] + contactInfos[i].JacTang2A.dot(diffA) + contactInfos[i].JacTang2B.dot(diffB);
 
+        if (constraintPoints[i * 3 + 0].C >= 0.0f)
+        {
+            constraintPoints[i * 3 + 0].lambda = 0.0f;
+            constraintPoints[i * 3 + 1].lambda = 0.0f;
+            constraintPoints[i * 3 + 2].lambda = 0.0f;
+            contactInfos[i].stick = false;
+        }
+
         // Now the coulomb friction bounds, we normaly did set up the normal to be compressive only
-        float normalLambda = std::abs(constraintPoints[i * 3 + 0].lambda);
+        float normalLambda = std::max(0.0f, -constraintPoints[i * 3 + 0].lambda);
         float bounds = normalLambda * friction;
 
         constraintPoints[i * 3 + 1].fmaxMagnitude = bounds;

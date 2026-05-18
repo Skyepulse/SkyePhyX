@@ -62,8 +62,14 @@ void GameManager::TickFrame()
     }
 
     const int MAX_PHYSICS_STEPS = 5;
+    RenderTimings& rt = this->renderEngine->renderTimings;
+    Time::TimePoint frameStart = Time::Clock::now();
+
     this->UpdateCurrentTime();
+    Time::TimePoint timeUpdated = Time::Clock::now();
+
     this->ProcessEvents(this->deltaTime);
+    Time::TimePoint eventsProcessed = Time::Clock::now();
 
     this->physicsAccumulator += this->deltaTime;
 
@@ -82,7 +88,7 @@ void GameManager::TickFrame()
     if (steps == MAX_PHYSICS_STEPS)
         this->physicsAccumulator = 0.f;
 
-    RenderTimings& rt = this->renderEngine->renderTimings;
+    Time::TimePoint physicsDone = Time::Clock::now();
 
     Time::TimePoint t0 = Time::Clock::now();
     bool success = this->renderEngine->AcquireSwapchainTexture();
@@ -115,6 +121,10 @@ void GameManager::TickFrame()
 
     Time::TimePoint t6 = Time::Clock::now();
 
+    rt.updateTime.push(Time::MillisecondsBetween(frameStart, timeUpdated));
+    rt.processEvents.push(Time::MillisecondsBetween(timeUpdated, eventsProcessed));
+    rt.physics.push(Time::MillisecondsBetween(eventsProcessed, physicsDone));
+    rt.physicsSteps.push(static_cast<float>(steps));
     rt.acquireSwapchain.push(Time::MillisecondsBetween(t0, t1));
     rt.updateInstances.push(Time::MillisecondsBetween(t1, t2));
     rt.updateLines.push(Time::MillisecondsBetween(t2, t3));
@@ -122,6 +132,7 @@ void GameManager::TickFrame()
     rt.render.push(Time::MillisecondsBetween(t4, t5));
     rt.present.push(Time::MillisecondsBetween(t5, t6));
     rt.totalFrame.push(Time::MillisecondsBetween(t0, t6));
+    rt.fullFrame.push(Time::MillisecondsBetween(frameStart, t6));
 
     this->AccumulateFrameRate();
 }

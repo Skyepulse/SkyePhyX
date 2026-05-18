@@ -243,8 +243,14 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
 
             ImGui::Separator();
             const RenderTimings& rt = this->renderTimings;
+            float frameTotal = rt.fullFrame.average() > 0.001f ? rt.fullFrame.average() : 1.0f;
             float renderTotal = rt.totalFrame.average() > 0.001f ? rt.totalFrame.average() : 1.0f;
 
+            ImGui::Text("Frame CPU Total: %.3f ms", rt.fullFrame.average());
+            ImGui::Text("  Time Update:    %6.3f ms  (%4.1f%%)", rt.updateTime.average(), 100.f * rt.updateTime.average() / frameTotal);
+            ImGui::Text("  Events/Input:   %6.3f ms  (%4.1f%%)", rt.processEvents.average(), 100.f * rt.processEvents.average() / frameTotal);
+            ImGui::Text("  Physics Frame:  %6.3f ms  (%4.1f%%)", rt.physics.average(), 100.f * rt.physics.average() / frameTotal);
+            ImGui::Text("  Physics Steps:  %6.1f", rt.physicsSteps.average());
             ImGui::Text("Render CPU Total: %.3f ms", rt.totalFrame.average());
             ImGui::Text("  Acquire Swap:   %6.3f ms  (%4.1f%%)", rt.acquireSwapchain.average(), 100.f * rt.acquireSwapchain.average() / renderTotal);
             ImGui::Text("  Instances:      %6.3f ms  (%4.1f%%)", rt.updateInstances.average(), 100.f * rt.updateInstances.average() / renderTotal);
@@ -254,6 +260,8 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
             ImGui::Text("  Present+Events: %6.3f ms  (%4.1f%%)", rt.present.average(), 100.f * rt.present.average() / renderTotal);
 
             ImGui::Separator();
+            DrawBar("Events", rt.processEvents.average(), frameTotal, ImVec4(0.8f, 0.5f, 0.1f, 1.0f));
+            DrawBar("Physics", rt.physics.average(), frameTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
             DrawBar("Acquire", rt.acquireSwapchain.average(), renderTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
             DrawBar("Instances", rt.updateInstances.average(), renderTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
             DrawBar("Lines", rt.updateLines.average(), renderTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
