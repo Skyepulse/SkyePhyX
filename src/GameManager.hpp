@@ -9,6 +9,20 @@
 #include "levels.h"
 
 //================================//
+struct ObjectPicker
+{
+    bool active = false;
+    float screenX = 0.0f;
+    float screenY = 0.0f;
+
+    Mesh* pickedMesh = nullptr;
+    Eigen::Vector3f localHitPoint = Eigen::Vector3f::Zero();
+    float hitDistance = 0.0f;
+
+    Joint* mouseJoint = nullptr;
+};
+
+//================================//
 class GameManager
 {
 public:
@@ -45,7 +59,8 @@ private:
 
     float lastMouseX = 0.0f;
     float lastMouseY = 0.0f;
-    bool mouseClicked = false;
+    bool rMouseClicked = false;
+    bool lMouseClicked = false;
 
     bool paused = false;
     bool pKeyWasPressed = false;
@@ -69,9 +84,13 @@ private:
     //================================//
     void SpawnRandomBox();
     void SpawnShootingSphere();
+    void ReleaseObjectPicker();
+    Eigen::Vector3f ProjectMouseToPickDepth(float screenX, float screenY, float depth);
+    bool RaycastFromMouse(float screenX, float screenY, Eigen::Vector3f& outHitPoint, Mesh*& outHitMesh, float& outHitDistance);
 
     //================================//
     int currentLevel = 1;
+    ObjectPicker objectPicker;
 };
 
 #endif // GAMEMANAGER_HPP
