@@ -265,54 +265,6 @@ void Manifold::ComputeDerivatives(Mesh* mesh)
 }
 
 //================================//
-void Manifold::ComputePrimalTerms(Mesh* mesh, float alpha, ConstraintPointProperties* out)
-{
-    Eigen::Vector3f posA = bodyA->transform.GetPosition();
-    Eigen::Vector3f posB = bodyB->transform.GetPosition();
-
-    Quaternionf qA = bodyA->transform.GetRotation();
-    Quaternionf qB = bodyB->transform.GetRotation();
-
-    Vector6f diffA, diffB;
-    diffA.head<3>() = posA - bodyA->lastPosition;
-    diffA.tail<3>() = RotationDifference(qA, bodyA->lastRotation);
-    diffB.head<3>() = posB - bodyB->lastPosition;
-    diffB.tail<3>() = RotationDifference(qB, bodyB->lastRotation);
-
-    for (int i = 0; i < numContactPoints; ++i)
-    {
-        const int row = i * 3;
-        out[row + 0] = constraintPoints[row + 0];
-        out[row + 1] = constraintPoints[row + 1];
-        out[row + 2] = constraintPoints[row + 2];
-
-        Eigen::Vector3f alphaC0 = (1.f - alpha) * contactInfos[i].C0;
-        out[row + 0].C = alphaC0[0] + contactInfos[i].JacNormA.dot(diffA) + contactInfos[i].JacNormB.dot(diffB);
-        out[row + 1].C = alphaC0[1] + contactInfos[i].JacTang1A.dot(diffA) + contactInfos[i].JacTang1B.dot(diffB);
-        out[row + 2].C = alphaC0[2] + contactInfos[i].JacTang2A.dot(diffA) + contactInfos[i].JacTang2B.dot(diffB);
-
-        float bounds = std::abs(constraintPoints[row].lambda) * friction;
-        out[row + 1].fmaxMagnitude = bounds;
-        out[row + 1].fminMagnitude = -bounds;
-        out[row + 2].fmaxMagnitude = bounds;
-        out[row + 2].fminMagnitude = -bounds;
-
-        if (mesh == bodyA)
-        {
-            out[row + 0].J = contactInfos[i].JacNormA;
-            out[row + 1].J = contactInfos[i].JacTang1A;
-            out[row + 2].J = contactInfos[i].JacTang2A;
-        }
-        else
-        {
-            out[row + 0].J = contactInfos[i].JacNormB;
-            out[row + 1].J = contactInfos[i].JacTang1B;
-            out[row + 2].J = contactInfos[i].JacTang2B;
-        }
-    }
-}
-
-//================================//
 void Manifold::AddLineData(std::vector<GPULineData>& data) const
 {
     for (int i = 0; i < numContactPoints; i++)

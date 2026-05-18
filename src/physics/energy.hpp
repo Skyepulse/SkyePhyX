@@ -18,13 +18,6 @@
 // 20000   → nearly rigid       0.495 → highly incompressible
 
 //================================//
-struct EnergyPrimalTerms
-{
-    Vector6f grad = Vector6f::Zero();
-    Matrix6f hess = Matrix6f::Zero();
-};
-
-//================================//
 struct Energy
 {
     Energy(Solver* solver, std::vector<Mesh*> linkedBodies);
@@ -47,7 +40,6 @@ struct Energy
 
     virtual bool Initialize() = 0;
     virtual void ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho) = 0;
-    virtual EnergyPrimalTerms ComputePrimalTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho) = 0;
     virtual int numBodies() const = 0;
     virtual void AddLineData(std::vector<GPULineData>& data) const = 0;
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const = 0;
@@ -86,7 +78,6 @@ struct NeoHookeanFEM: Energy
 
     virtual bool Initialize() override { return true; };
     virtual void ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho) override;
-    virtual EnergyPrimalTerms ComputePrimalTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho) override;
     virtual int  numBodies() const override { return 4; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const override {}
@@ -124,7 +115,6 @@ struct STVKFEM: Energy
 
     virtual bool Initialize() override { return true; };
     virtual void ComputeEnergyTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho) override;
-    virtual EnergyPrimalTerms ComputePrimalTerms(Mesh* mesh, EigenProjectionMode projectionMode, float trustRegionRho) override;
     virtual int  numBodies() const override { return 3; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;
     virtual void AddDebugPointData(std::vector<GPUDebugPointData>& data) const override {}

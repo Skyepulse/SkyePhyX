@@ -48,7 +48,6 @@ struct Force
     virtual bool Initialize() = 0;
     virtual void ComputeConstraints(float alpha) = 0;
     virtual void ComputeDerivatives(Mesh* mesh) = 0;
-    virtual void ComputePrimalTerms(Mesh* mesh, float alpha, ConstraintPointProperties* out) = 0;
     virtual int numConstraints() const = 0;
     virtual int numBodies() const = 0;
     virtual void AddLineData(std::vector<GPULineData>& data) const = 0;
@@ -96,7 +95,6 @@ struct Spring: Force
     virtual bool Initialize() override { return !disabled; }
     virtual void ComputeConstraints(float alpha) override;
     virtual void ComputeDerivatives(Mesh* mesh) override;
-    virtual void ComputePrimalTerms(Mesh* mesh, float alpha, ConstraintPointProperties* out) override;
     virtual int numConstraints() const override { return 1; }
     virtual int numBodies() const override { return 2; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;
@@ -127,7 +125,6 @@ struct Joint : Force
     virtual bool Initialize() override;
     virtual void ComputeConstraints(float alpha) override;
     virtual void ComputeDerivatives(Mesh* mesh) override;
-    virtual void ComputePrimalTerms(Mesh* mesh, float alpha, ConstraintPointProperties* out) override;
     virtual int numConstraints() const override { return NUM_CONSTRAINTS; }
     virtual int numBodies() const override { return 2; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;
@@ -174,7 +171,6 @@ struct Manifold: Force
     virtual bool Initialize() override;
     virtual void ComputeConstraints(float alpha) override;
     virtual void ComputeDerivatives(Mesh* mesh) override;
-    virtual void ComputePrimalTerms(Mesh* mesh, float alpha, ConstraintPointProperties* out) override;
     virtual int numConstraints() const override { return numContactPoints * 3; }
     virtual int numBodies() const override { return 2; }
     virtual void AddLineData(std::vector<GPULineData>& data) const override;

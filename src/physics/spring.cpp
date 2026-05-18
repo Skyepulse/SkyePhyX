@@ -109,56 +109,6 @@ void Spring::ComputeDerivatives(Mesh* mesh)
 }
 
 //================================//
-void Spring::ComputePrimalTerms(Mesh* mesh, float alpha, ConstraintPointProperties* out)
-{
-    out[0] = constraintPoints[0];
-
-    const Eigen::Vector3f posA = bodyA ? bodyA->transform.TransformPoint(rA) : rA;
-    const Eigen::Vector3f posB = bodyB->transform.TransformPoint(rB);
-    const Eigen::Vector3f d = posB - posA;
-    const float L = d.norm();
-    const float L2 = d.squaredNorm();
-
-    out[0].C = L - restLength;
-    out[0].J.setZero();
-    out[0].H.setZero();
-
-    if (L2 < 1e-6f)
-        return;
-
-    const Eigen::Vector3f n = d / L;
-    const Eigen::Matrix3f I = Eigen::Matrix3f::Identity();
-    const Eigen::Matrix3f dxx = (I - n * n.transpose()) / L;
-
-    if (mesh == bodyA && bodyA != nullptr)
-    {
-        const Eigen::Vector3f r = bodyA->transform.GetRotation() * rA;
-        const Eigen::Matrix3f Sr = -skew(r);
-        const Eigen::Matrix3f dxr = dxx * Sr.transpose();
-
-        out[0].J.head<3>() = -n;
-        out[0].J.tail<3>() = n.cross(r);
-        out[0].H.block<3,3>(0,0) = dxx;
-        out[0].H.block<3,3>(0,3) = dxr;
-        out[0].H.block<3,3>(3,0) = dxr.transpose();
-        out[0].H.block<3,3>(3,3) = Sr * dxx * Sr.transpose() - skew(n) * skew(r);
-    }
-    else
-    {
-        const Eigen::Vector3f r = bodyB->transform.GetRotation() * rB;
-        const Eigen::Matrix3f minusSr = skew(r);
-        const Eigen::Matrix3f dxr = dxx * minusSr.transpose();
-
-        out[0].J.head<3>() = n;
-        out[0].J.tail<3>() = r.cross(n);
-        out[0].H.block<3,3>(0,0) = dxx;
-        out[0].H.block<3,3>(0,3) = dxr;
-        out[0].H.block<3,3>(3,0) = dxr.transpose();
-        out[0].H.block<3,3>(3,3) = minusSr * dxx * minusSr.transpose() + skew(n) * skew(r);
-    }
-}
-
-//================================//
 void Spring::AddLineData(std::vector<GPULineData>& data) const
 {
     // Transform the points rA and rB into world position

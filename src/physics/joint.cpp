@@ -173,48 +173,6 @@ void Joint::ComputeDerivatives(Mesh* mesh)
 }
 
 //================================//
-void Joint::ComputePrimalTerms(Mesh* mesh, float alpha, ConstraintPointProperties* out)
-{
-    for (int i = 0; i < NUM_CONSTRAINTS; ++i)
-    {
-        out[i] = constraintPoints[i];
-        out[i].J.setZero();
-        out[i].H.setZero();
-    }
-
-    const Eigen::Vector3f worldA = bodyA ? bodyA->transform.TransformPoint(rA) : rA;
-    const Eigen::Vector3f worldB = bodyB->transform.TransformPoint(rB);
-    const Eigen::Vector3f Cn_pos = worldA - worldB;
-
-    const Quaternionf qA = bodyA ? bodyA->transform.GetRotation() : Quaternionf::Identity();
-    const Quaternionf qB = bodyB->transform.GetRotation();
-    const Eigen::Vector3f Cn_ang = AngularError(qA, qB, restRotation, torqueArm);
-
-    for (int i = 0; i < 3; ++i)
-    {
-        out[i].C = std::isinf(out[i].stiffness) ? Cn_pos[i] - C0_pos[i] * alpha : Cn_pos[i];
-        out[3 + i].C = std::isinf(out[3 + i].stiffness) ? Cn_ang[i] - C0_ang[i] * alpha : Cn_ang[i];
-    }
-
-    Mesh* body = mesh == bodyA ? bodyA : bodyB;
-    const Eigen::Vector3f anchor = mesh == bodyA ? rA : rB;
-    const Eigen::Vector3f r = body->transform.GetRotation() * (body->transform.GetScale().asDiagonal() * anchor);
-    const float sign = mesh == bodyA ? 1.0f : -1.0f;
-
-    for (int i = 0; i < 3; ++i)
-    {
-        Eigen::Vector3f ei = Eigen::Vector3f::Zero();
-        ei[i] = 1.0f;
-
-        out[i].J.head<3>() = sign * ei;
-        out[i].J.tail<3>() = sign * r.cross(ei);
-        out[i].H(5,5) = -sign * r[i];
-
-        out[3 + i].J.tail<3>() = -sign * torqueArm * ei;
-    }
-}
-
-//================================//
 void Joint::AddLineData(std::vector<GPULineData>& data) const
 {
     Eigen::Vector3f worldA = bodyA ? bodyA->transform.TransformPoint(rA) : rA;
