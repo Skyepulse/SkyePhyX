@@ -128,10 +128,9 @@ public:
     //================================//
     void LookAtDirection(const Eigen::Vector3f& direction)
     {
-        forward = direction.normalized();
-        right = forward.cross(worldUp).normalized();
-        up = right.cross(forward).normalized();
-
+        Eigen::Vector3d targetForward = direction.cast<double>().normalized();
+        orientation = Quaterniond::FromTwoVectors(Eigen::Vector3d(0.0, 0.0, -1.0), targetForward);
+        orientation.normalize();
         UpdateCameraVectors();
     }
 
