@@ -133,7 +133,7 @@ void GameManager::RunMainLoop()
     std::cout << "[INFO][GameManager] Entering main loop...\n";
 
     this->solver->Start();
-    ChangeLevel(0);
+    ChangeLevel(1);
 
 #ifdef __EMSCRIPTEN__
     emscripten_set_main_loop_arg(
@@ -159,11 +159,12 @@ void GameManager::ProcessEvents(float deltaTime)
     glfwPollEvents();
 
     Camera* camera = this->renderEngine->GetCamera();
+    bool mouseCapturedByUi = this->renderEngine->IsImGuiCapturingMouse();
 
     bool isShiftPressed = glfwGetKey(this->window.get(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(this->window.get(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
     float speed = isShiftPressed ? 60.0f : 10.0f;
 
-    if (glfwGetMouseButton(this->window.get(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+    if (!mouseCapturedByUi && glfwGetMouseButton(this->window.get(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
     {
         double mouseX, mouseY;
         glfwGetCursorPos(this->window.get(), &mouseX, &mouseY);

@@ -39,23 +39,62 @@ static Eigen::Vector3f AVBDGraphColor(int colorIndex)
 //================================//
 void RenderEngine::InitImGui()
 {
-    constexpr float kWebImGuiScale = 0.8f;
-    constexpr float kBaseFontSizePixels = 13.0f;
+    constexpr float kWebImGuiScale = 0.9f;
+    constexpr float kBaseFontSizePixels = 15.0f;
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    ImGui::StyleColorsDark();
-    ImGuiStyle& style = ImGui::GetStyle();
-#ifdef __EMSCRIPTEN__
-    style.ScaleAllSizes(kWebImGuiScale);
     io.Fonts->Clear();
 
     ImFontConfig fontConfig{};
-    fontConfig.SizePixels = kBaseFontSizePixels * kWebImGuiScale;
-    io.Fonts->AddFontDefault(&fontConfig);
+    fontConfig.SizePixels = kBaseFontSizePixels;
+    fontConfig.OversampleH = 3;
+    fontConfig.OversampleV = 2;
+#ifdef __EMSCRIPTEN__
+    fontConfig.SizePixels *= kWebImGuiScale;
+#endif
+    bool fontLoaded = false;
+#ifdef _WIN32
+    fontLoaded = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", fontConfig.SizePixels, &fontConfig) != nullptr;
+#endif
+    if (!fontLoaded)
+        io.Fonts->AddFontDefault(&fontConfig);
+
+    ImGui::StyleColorsDark();
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowPadding = ImVec2(12.0f, 10.0f);
+    style.FramePadding = ImVec2(8.0f, 5.0f);
+    style.ItemSpacing = ImVec2(8.0f, 7.0f);
+    style.ScrollbarSize = 14.0f;
+    style.GrabMinSize = 10.0f;
+    style.WindowRounding = 6.0f;
+    style.FrameRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.PopupRounding = 4.0f;
+    style.TabRounding = 4.0f;
+
+    ImVec4* colors = style.Colors;
+    colors[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.09f, 0.10f, 0.94f);
+    colors[ImGuiCol_TitleBg] = ImVec4(0.11f, 0.13f, 0.15f, 1.00f);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(0.15f, 0.18f, 0.21f, 1.00f);
+    colors[ImGuiCol_Border] = ImVec4(0.28f, 0.32f, 0.36f, 0.55f);
+    colors[ImGuiCol_FrameBg] = ImVec4(0.14f, 0.16f, 0.18f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.22f, 0.27f, 0.31f, 1.00f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.25f, 0.33f, 0.38f, 1.00f);
+    colors[ImGuiCol_CheckMark] = ImVec4(0.28f, 0.72f, 0.78f, 1.00f);
+    colors[ImGuiCol_SliderGrab] = ImVec4(0.28f, 0.72f, 0.78f, 1.00f);
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.38f, 0.86f, 0.92f, 1.00f);
+    colors[ImGuiCol_Button] = ImVec4(0.18f, 0.25f, 0.29f, 1.00f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.25f, 0.36f, 0.41f, 1.00f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.20f, 0.55f, 0.62f, 1.00f);
+    colors[ImGuiCol_Header] = ImVec4(0.18f, 0.25f, 0.29f, 1.00f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.25f, 0.36f, 0.41f, 1.00f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.20f, 0.55f, 0.62f, 1.00f);
+#ifdef __EMSCRIPTEN__
+    style.ScaleAllSizes(kWebImGuiScale);
 #endif
 
     GLFWwindow* window = this->wgpuBundle->GetGLFWWindow();
@@ -87,8 +126,9 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     ImGui::SetNextWindowPos(
-        ImVec2(viewport->WorkPos.x + kWindowPadding, viewport->WorkPos.y + kWindowPadding),
-        ImGuiCond_FirstUseEver
+        ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - kWindowPadding, viewport->WorkPos.y + kWindowPadding),
+        ImGuiCond_Once,
+        ImVec2(1.0f, 0.0f)
     );
 
     ImGui::Begin("Simulation Parameters");
@@ -117,6 +157,8 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
 
     if (ImGui::Button("Reset"))
         this->gameManager->ChangeLevel(currentLevel);
+
+    ImGui::Checkbox("Performance Metrics", &this->showPerformanceMetrics);
 
     if (ImGui::Checkbox("Wireframe Meshes", &this->meshRenderOptions.wireframe))
     {
@@ -149,77 +191,81 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui::InputFloat("On Penetration Penalty", &this->solver->onPenetrationPenalty, 100.0f, 10000.0f, "%.1f");
     ImGui::End();
 
-    ImGui::SetNextWindowPos(
-        ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - kWindowPadding, viewport->WorkPos.y + kWindowPadding),
-        ImGuiCond_FirstUseEver,
-        ImVec2(1.0f, 0.0f)
-    );
+    if (this->showPerformanceMetrics)
+    {
+        ImGui::SetNextWindowPos(
+            ImVec2(viewport->WorkPos.x + kWindowPadding, viewport->WorkPos.y + kWindowPadding),
+            ImGuiCond_Once
+        );
 
-    ImGui::Begin("Performance Metrics");
-    ImGui::Text("GPU Draw Time: %.3f ms", this->gpuFrameTimeDrawMs);
-    ImGui::Separator();
+        if (ImGui::Begin("Performance Metrics", &this->showPerformanceMetrics))
+        {
+            ImGui::Text("GPU Draw Time: %.3f ms", this->gpuFrameTimeDrawMs);
+            ImGui::Separator();
 
-    ImGui::Text("Solver Total: %.3f ms", this->solverStepTimeMs);
+            ImGui::Text("Solver Total: %.3f ms", this->solverStepTimeMs);
 
-    const SolverTimings& t = this->solver->timings;
-    float solverTotal = t.totalSubstepMs > 0.001f ? t.totalSubstepMs : 1.0f;
+            const SolverTimings& t = this->solver->timings;
+            float solverTotal = t.totalSubstepMs > 0.001f ? t.totalSubstepMs : 1.0f;
 
-    ImGui::Text("  Broad Phase:    %6.3f ms  (%4.1f%%)", t.broadPhaseMs,     100.f * t.broadPhaseMs / solverTotal);
-    ImGui::Text("  Warmstart:      %6.3f ms  (%4.1f%%)", t.warmstartMs,      100.f * t.warmstartMs / solverTotal);
-    ImGui::Text("  Recolor Graph:  %6.3f ms  (%4.1f%%)", t.coloringMs,       100.f * t.coloringMs / solverTotal);
-    ImGui::Text("  Prediction:     %6.3f ms  (%4.1f%%)", t.predictionMs,     100.f * t.predictionMs / solverTotal);
-    ImGui::Text("  Primal+Dual:    %6.3f ms  (%4.1f%%)", t.primalDualMs,        100.f * t.primalDualMs / solverTotal);
-    ImGui::Text("    Constraints:  %6.3f ms  (%4.1f%%)", t.solveConstraintsMs,  100.f * t.solveConstraintsMs / solverTotal);
-    ImGui::Text("    Energies:     %6.3f ms  (%4.1f%%)", t.solveEnergiesMs,     100.f * t.solveEnergiesMs / solverTotal);
-    ImGui::Text("    LDLT Solve:   %6.3f ms  (%4.1f%%)", t.solveLDLTMs,         100.f * t.solveLDLTMs / solverTotal);
-    ImGui::Text("  Velocity Update: %5.3f ms  (%4.1f%%)", t.velocityUpdateMs, 100.f * t.velocityUpdateMs / solverTotal);
-    ImGui::Text("  Post-Stab:      %6.3f ms  (%4.1f%%)", t.postStabMs,       100.f * t.postStabMs / solverTotal);
+            ImGui::Text("  Broad Phase:    %6.3f ms  (%4.1f%%)", t.broadPhaseMs, 100.f * t.broadPhaseMs / solverTotal);
+            ImGui::Text("  Warmstart:      %6.3f ms  (%4.1f%%)", t.warmstartMs, 100.f * t.warmstartMs / solverTotal);
+            ImGui::Text("  Recolor Graph:  %6.3f ms  (%4.1f%%)", t.coloringMs, 100.f * t.coloringMs / solverTotal);
+            ImGui::Text("  Prediction:     %6.3f ms  (%4.1f%%)", t.predictionMs, 100.f * t.predictionMs / solverTotal);
+            ImGui::Text("  Primal+Dual:    %6.3f ms  (%4.1f%%)", t.primalDualMs, 100.f * t.primalDualMs / solverTotal);
+            ImGui::Text("    Constraints:  %6.3f ms  (%4.1f%%)", t.solveConstraintsMs, 100.f * t.solveConstraintsMs / solverTotal);
+            ImGui::Text("    Energies:     %6.3f ms  (%4.1f%%)", t.solveEnergiesMs, 100.f * t.solveEnergiesMs / solverTotal);
+            ImGui::Text("    LDLT Solve:   %6.3f ms  (%4.1f%%)", t.solveLDLTMs, 100.f * t.solveLDLTMs / solverTotal);
+            ImGui::Text("  Velocity Update: %5.3f ms  (%4.1f%%)", t.velocityUpdateMs, 100.f * t.velocityUpdateMs / solverTotal);
+            ImGui::Text("  Post-Stab:      %6.3f ms  (%4.1f%%)", t.postStabMs, 100.f * t.postStabMs / solverTotal);
 
-    ImVec2 barSize(200, 14);
-    auto DrawBar = [&](const char* label, float ms, float total, ImVec4 color) {
-        float frac = ms / total;
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, color);
-        ImGui::ProgressBar(frac, barSize, "");
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        ImGui::Text("%s", label);
-    };
+            ImVec2 barSize(200, 14);
+            auto DrawBar = [&](const char* label, float ms, float total, ImVec4 color) {
+                float frac = ms / total;
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, color);
+                ImGui::ProgressBar(frac, barSize, "");
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+                ImGui::Text("%s", label);
+            };
 
-    ImGui::Separator();
-    DrawBar("Broad",      t.broadPhaseMs,     solverTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-    DrawBar("Warmstart",  t.warmstartMs,      solverTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
-    DrawBar("Recolor",    t.coloringMs,       solverTotal, ImVec4(0.8f, 0.5f, 0.1f, 1.0f));
-    DrawBar("Prediction", t.predictionMs,     solverTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
-    DrawBar("Solve",       t.primalDualMs,        solverTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
-    DrawBar(" Constraints", t.solveConstraintsMs, solverTotal, ImVec4(0.1f, 0.6f, 0.4f, 1.0f));
-    DrawBar(" Energies",    t.solveEnergiesMs,    solverTotal, ImVec4(0.1f, 0.5f, 0.7f, 1.0f));
-    DrawBar(" LDLT",        t.solveLDLTMs,        solverTotal, ImVec4(0.1f, 0.4f, 0.9f, 1.0f));
-    DrawBar("Velocity",   t.velocityUpdateMs, solverTotal, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
-    DrawBar("PostStab",   t.postStabMs,       solverTotal, ImVec4(0.7f, 0.3f, 0.9f, 1.0f));
+            ImGui::Separator();
+            DrawBar("Broad", t.broadPhaseMs, solverTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+            DrawBar("Warmstart", t.warmstartMs, solverTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+            DrawBar("Recolor", t.coloringMs, solverTotal, ImVec4(0.8f, 0.5f, 0.1f, 1.0f));
+            DrawBar("Prediction", t.predictionMs, solverTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
+            DrawBar("Solve", t.primalDualMs, solverTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+            DrawBar(" Constraints", t.solveConstraintsMs, solverTotal, ImVec4(0.1f, 0.6f, 0.4f, 1.0f));
+            DrawBar(" Energies", t.solveEnergiesMs, solverTotal, ImVec4(0.1f, 0.5f, 0.7f, 1.0f));
+            DrawBar(" LDLT", t.solveLDLTMs, solverTotal, ImVec4(0.1f, 0.4f, 0.9f, 1.0f));
+            DrawBar("Velocity", t.velocityUpdateMs, solverTotal, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+            DrawBar("PostStab", t.postStabMs, solverTotal, ImVec4(0.7f, 0.3f, 0.9f, 1.0f));
 
-    ImGui::Separator();
-    const RenderTimings& rt = this->renderTimings;
-    float renderTotal = rt.totalFrame.average() > 0.001f ? rt.totalFrame.average() : 1.0f;
+            ImGui::Separator();
+            const RenderTimings& rt = this->renderTimings;
+            float renderTotal = rt.totalFrame.average() > 0.001f ? rt.totalFrame.average() : 1.0f;
 
-    ImGui::Text("Render CPU Total: %.3f ms", rt.totalFrame.average());
-    ImGui::Text("  Acquire Swap:   %6.3f ms  (%4.1f%%)", rt.acquireSwapchain.average(), 100.f * rt.acquireSwapchain.average() / renderTotal);
-    ImGui::Text("  Instances:      %6.3f ms  (%4.1f%%)", rt.updateInstances.average(),  100.f * rt.updateInstances.average() / renderTotal);
-    ImGui::Text("  Lines:          %6.3f ms  (%4.1f%%)", rt.updateLines.average(),      100.f * rt.updateLines.average() / renderTotal);
-    ImGui::Text("  Debug Points:   %6.3f ms  (%4.1f%%)", rt.updateDebug.average(),      100.f * rt.updateDebug.average() / renderTotal);
-    ImGui::Text("  Render+Submit:  %6.3f ms  (%4.1f%%)", rt.render.average(),           100.f * rt.render.average() / renderTotal);
-    ImGui::Text("  Present+Events: %6.3f ms  (%4.1f%%)", rt.present.average(),          100.f * rt.present.average() / renderTotal);
+            ImGui::Text("Render CPU Total: %.3f ms", rt.totalFrame.average());
+            ImGui::Text("  Acquire Swap:   %6.3f ms  (%4.1f%%)", rt.acquireSwapchain.average(), 100.f * rt.acquireSwapchain.average() / renderTotal);
+            ImGui::Text("  Instances:      %6.3f ms  (%4.1f%%)", rt.updateInstances.average(), 100.f * rt.updateInstances.average() / renderTotal);
+            ImGui::Text("  Lines:          %6.3f ms  (%4.1f%%)", rt.updateLines.average(), 100.f * rt.updateLines.average() / renderTotal);
+            ImGui::Text("  Debug Points:   %6.3f ms  (%4.1f%%)", rt.updateDebug.average(), 100.f * rt.updateDebug.average() / renderTotal);
+            ImGui::Text("  Render+Submit:  %6.3f ms  (%4.1f%%)", rt.render.average(), 100.f * rt.render.average() / renderTotal);
+            ImGui::Text("  Present+Events: %6.3f ms  (%4.1f%%)", rt.present.average(), 100.f * rt.present.average() / renderTotal);
 
-    ImGui::Separator();
-    DrawBar("Acquire",   rt.acquireSwapchain.average(), renderTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-    DrawBar("Instances", rt.updateInstances.average(),  renderTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
-    DrawBar("Lines",     rt.updateLines.average(),      renderTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
-    DrawBar("Debug",     rt.updateDebug.average(),      renderTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
-    DrawBar("Render",    rt.render.average(),           renderTotal, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
-    DrawBar("Present",   rt.present.average(),          renderTotal, ImVec4(0.7f, 0.3f, 0.9f, 1.0f));
+            ImGui::Separator();
+            DrawBar("Acquire", rt.acquireSwapchain.average(), renderTotal, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+            DrawBar("Instances", rt.updateInstances.average(), renderTotal, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+            DrawBar("Lines", rt.updateLines.average(), renderTotal, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
+            DrawBar("Debug", rt.updateDebug.average(), renderTotal, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+            DrawBar("Render", rt.render.average(), renderTotal, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+            DrawBar("Present", rt.present.average(), renderTotal, ImVec4(0.7f, 0.3f, 0.9f, 1.0f));
 
-    ImGui::Separator();
-    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-    ImGui::End();
+            ImGui::Separator();
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        }
+        ImGui::End();
+    }
 
     ImGui::Render();
     ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), pass.Get());

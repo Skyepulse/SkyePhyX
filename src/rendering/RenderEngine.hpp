@@ -174,6 +174,7 @@ public:
 
     //================================//
     Camera* GetCamera() { return this->camera.get(); }
+    bool IsImGuiCapturingMouse() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse; }
 
     bool debug = true;
     RenderTimings renderTimings;
@@ -185,6 +186,7 @@ private:
     std::unique_ptr<Camera> camera;
 
     bool resizeFlag = true;
+    bool showPerformanceMetrics = false;
     MeshRenderOptions meshRenderOptions;
     RenderVisibility visibility;
 

@@ -71,7 +71,7 @@ private:
     void SpawnShootingSphere();
 
     //================================//
-    int currentLevel = 0;
+    int currentLevel = 1;
 };
 
 #endif // GAMEMANAGER_HPP
