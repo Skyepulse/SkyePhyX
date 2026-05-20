@@ -12,8 +12,6 @@ namespace CollisionSpace
 {
     static constexpr float SEPARATING_AXIS_RELATIVE_TOLERANCE = 1.002f;
     static constexpr float SEPARATING_AXIS_ABSOLUTE_TOLERANCE = 0.0005f;
-    static constexpr float FACE_CONTACT_EDGE_BIAS = 0.005f;
-
     //================================//
     struct CapsuleFaceQuery
     {
@@ -29,10 +27,15 @@ namespace CollisionSpace
     };
 
     //================================//
-    static bool ShouldPreferEdgeAxis(double edgeSeparation, double bestFaceSeparation)
+    static bool ShouldPreferEdgeAxis(double edgeSeparation, double bestFaceSeparation, double shapeMargin)
     {
-        return edgeSeparation > bestFaceSeparation * SEPARATING_AXIS_RELATIVE_TOLERANCE +
-                                 SEPARATING_AXIS_ABSOLUTE_TOLERANCE;
+        const double edgePenetration = shapeMargin - edgeSeparation;
+        const double facePenetration = shapeMargin - bestFaceSeparation;
+
+        // ReactPhysics3D compares positive penetration depths here.  We store
+        // signed separations, so convert before applying the same bias.
+        return edgePenetration * SEPARATING_AXIS_RELATIVE_TOLERANCE +
+               SEPARATING_AXIS_ABSOLUTE_TOLERANCE < facePenetration;
     }
 
     //================================//
@@ -662,7 +665,7 @@ namespace CollisionSpace
             return result;
 
         const double bestFaceSeparation = faceQuery.separation;
-        if (!ShouldPreferEdgeAxis(edgeQuery.separation, bestFaceSeparation))
+        if (!ShouldPreferEdgeAxis(edgeQuery.separation, bestFaceSeparation, capsule.radius))
         {
             const Eigen::Vector3f referenceNormal = TransformNormalToWorld(hullMesh->transform, hull.faces[faceQuery.faceIndex].normal);
             BuildCapsuleFaceContacts(hullMesh, capsuleMesh, hull, faceQuery.faceIndex, referenceNormal, capsule, result);
@@ -724,13 +727,16 @@ namespace CollisionSpace
             return result;
 
         const double bestFaceSeparation = std::max(faceQueryA.separation, faceQueryB.separation);
-        if (ShouldPreferEdgeAxis(edgeQuery.separation, bestFaceSeparation))
+        if (ShouldPreferEdgeAxis(edgeQuery.separation, bestFaceSeparation, 0.0))
         {
             CreateHullEdgeContact(meshA, hullA, meshB, hullB, edgeQuery, result);
             return result;
         }
 
-        if (faceQueryA.separation >= faceQueryB.separation - FACE_CONTACT_EDGE_BIAS)
+        const double penetrationA = -faceQueryA.separation;
+        const double penetrationB = -faceQueryB.separation;
+        if (penetrationA < penetrationB * SEPARATING_AXIS_RELATIVE_TOLERANCE +
+                           SEPARATING_AXIS_ABSOLUTE_TOLERANCE)
         {
             CreateHullFaceContacts(meshA, hullA, meshB, hullB, faceQueryA, result);
         }
