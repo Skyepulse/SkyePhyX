@@ -160,6 +160,7 @@ namespace CollisionSpace
             return query;
         }
 
+        const Eigen::Matrix3f linearB = transformB.GetRotation().toRotationMatrix() * transformB.GetScale().asDiagonal();
         const Eigen::Vector3f hullCenterWorldA = transformA.TransformPoint(hullA.centroid);
 
         for (int edgeIndexA = 0; edgeIndexA < static_cast<int>(hullA.edgeCount()); ++edgeIndexA)
@@ -211,12 +212,10 @@ namespace CollisionSpace
                 if (axis.dot(edgeAStart - hullCenterWorldA) < 0.0f)
                     axis = -axis;
 
-                // ReactPhysics3D computes the edge-axis distance from the
-                // selected Minkowski edge pair, not from an arbitrary support
-                // vertex.  Using support here can jump to a different feature
-                // and falsely reject edge-into-face contacts until the overlap
-                // is extremely deep.
-                const double separation = static_cast<double>(axis.dot(edgeBStart - edgeAStart));
+                const Eigen::Vector3f supportDirectionLocalB = linearB.transpose() * (-axis);
+                const Eigen::Vector3f supportPointLocalB = hullB.GetSupport(supportDirectionLocalB);
+                const Eigen::Vector3f supportPointWorldB = transformB.TransformPoint(supportPointLocalB);
+                const double separation = static_cast<double>(axis.dot(supportPointWorldB - edgeAStart));
 
                 if (separation > query.separation)
                 {
@@ -377,7 +376,7 @@ namespace CollisionSpace
         ContactPoint& contact = result.contactPoints[0];
         contact.position = 0.5f * (pointA + pointB);
         contact.normal = normal;
-        contact.penetration = std::max(0.0f, static_cast<float>(-edgeQuery.separation));
+        contact.penetration = std::max(0.0f, -normal.dot(pointB - pointA));
         contact.rA = ToLocalOffset(meshA, pointA);
         contact.rB = ToLocalOffset(meshB, pointB);
         contact.id = MakeContactID(2u, edgeQuery.edgeIndexA, edgeQuery.edgeIndexB, 0u);
