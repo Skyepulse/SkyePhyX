@@ -17,6 +17,7 @@ const float ENERGY_STIFFNESS_MIN = 0.01;
 const float MAX_ROTATION_VELOCITY = 50.0f;
 
 static constexpr float MAX_VELOCITY = 500.0f;
+static constexpr float BROADPHASE_AABB_PADDING = 0.02f; // Prevents false negatives in sweep
 
 //================================//
 Solver::Solver()
@@ -390,6 +391,8 @@ void Solver::RefreshBroadPhaseEntries()
             continue;
 
         entry.aabb = mesh->GetWorldAABB();
+        entry.aabb.min -= Eigen::Vector3f::Constant(BROADPHASE_AABB_PADDING);
+        entry.aabb.max += Eigen::Vector3f::Constant(BROADPHASE_AABB_PADDING);
         entry.minX = entry.aabb.min.x();
         entry.maxX = entry.aabb.max.x();
         entry.cachedPosition = position;

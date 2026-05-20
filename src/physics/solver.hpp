@@ -158,7 +158,7 @@ public:
     }
 
     //================================//
-    ConvexHull GetModelConvexHull(ModelType modelType) const
+    const ConvexHull& GetModelConvexHull(ModelType modelType) const
     {
         // Fallout to empty ConvexHull if model type is not found
         auto it = modelGeometry.perModelConvexHulls.find(modelType);
@@ -166,7 +166,9 @@ public:
         {
             return it->second;
         }
-        return ConvexHull{};
+
+        static const ConvexHull emptyHull{};
+        return emptyHull;
     }
 
     //================================//

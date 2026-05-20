@@ -1,71 +1,43 @@
+#include "../collision.hpp"
+#include "../collisionAlgorithms/support.hpp"
+
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <vector>
-
-#include "../collision.hpp"
 
 //================================//
 namespace CollisionSpace
 {
+    //================================//
     namespace
     {
         //================================//
-        static Eigen::Vector3f AnyPerpendicular(const Eigen::Vector3f& axis)
-        {
-            Eigen::Vector3f perpendicular =
-                (std::abs(axis.x()) < 0.9f)
-                    ? axis.cross(Eigen::Vector3f::UnitX())
-                    : axis.cross(Eigen::Vector3f::UnitZ());
-
-            const float lengthSquared = perpendicular.squaredNorm();
-            if (lengthSquared <= 1e-12f)
-                return Eigen::Vector3f::UnitY();
-
-            return perpendicular / std::sqrt(lengthSquared);
-        }
-
-        //================================//
-        static void GetCapsuleInnerSegment(const Mesh* mesh, Eigen::Vector3f& outStart, Eigen::Vector3f& outEnd, Eigen::Vector3f& outAxis, float& outRadius)
-        {
-            const Transform& transform = mesh->transform;
-            const float scale = transform.GetScale().x();
-            const float bodyHeight = 0.5f * scale;
-            const float halfSegmentLength = 0.5f * bodyHeight;
-
-            outAxis = transform.GetRotation().toRotationMatrix().col(1).normalized();
-            outRadius = 0.25f * scale;
-            outStart = transform.GetPosition() - outAxis * halfSegmentLength;
-            outEnd = transform.GetPosition() + outAxis * halfSegmentLength;
-        }
-
-        //================================//
-        static bool ClipSegmentAgainstCapsuleSlab(const Eigen::Vector3f& segmentStart,
-                                                  const Eigen::Vector3f& segmentEnd,
-                                                  const Eigen::Vector3f& slabStart,
-                                                  const Eigen::Vector3f& slabEnd,
-                                                  const Eigen::Vector3f& slabAxis,
-                                                  Eigen::Vector3f& outStart,
-                                                  Eigen::Vector3f& outEnd)
+        static bool ClipSegmentAgainstSlab(const Eigen::Vector3f& segmentStart,
+                                           const Eigen::Vector3f& segmentEnd,
+                                           const Eigen::Vector3f& slabStart,
+                                           const Eigen::Vector3f& slabEnd,
+                                           const Eigen::Vector3f& slabAxis,
+                                           Eigen::Vector3f& outStart,
+                                           Eigen::Vector3f& outEnd)
         {
             const float slabMin = slabAxis.dot(slabStart);
             const float slabMax = slabAxis.dot(slabEnd);
-            const float d0 = slabAxis.dot(segmentStart);
-            const float d1 = slabAxis.dot(segmentEnd);
-            const float dd = d1 - d0;
+            const float distanceStart = slabAxis.dot(segmentStart);
+            const float distanceEnd = slabAxis.dot(segmentEnd);
+            const float distanceDelta = distanceEnd - distanceStart;
 
             float tMin = 0.0f;
             float tMax = 1.0f;
 
-            if (std::abs(dd) <= 1e-12f)
+            if (std::abs(distanceDelta) <= 1e-12f)
             {
-                if (d0 < slabMin || d0 > slabMax)
+                if (distanceStart < slabMin || distanceStart > slabMax)
                     return false;
             }
             else
             {
-                float t0 = (slabMin - d0) / dd;
-                float t1 = (slabMax - d0) / dd;
+                float t0 = (slabMin - distanceStart) / distanceDelta;
+                float t1 = (slabMax - distanceStart) / distanceDelta;
                 if (t0 > t1)
                     std::swap(t0, t1);
 
@@ -76,65 +48,59 @@ namespace CollisionSpace
             }
 
             const Eigen::Vector3f segment = segmentEnd - segmentStart;
-            outStart = segmentStart + tMin * segment;
-            outEnd = segmentStart + tMax * segment;
+            outStart = segmentStart + segment * tMin;
+            outEnd = segmentStart + segment * tMax;
             return true;
         }
 
         //================================//
-        static void AddCapsuleCapsuleContact(const Mesh* meshA, const Mesh* meshB,
-                                             const Eigen::Vector3f& linePointA,
-                                             const Eigen::Vector3f& linePointB,
-                                             float radiusA, float radiusB,
-                                             const Eigen::Vector3f& capsuleAxisA,
-                                             const Eigen::Vector3f& capsuleAxisB,
-                                             uint32_t contactId,
-                                             CollisionResult& result)
+        static void AddCapsuleContact(const Mesh* meshA,
+                                      const Mesh* meshB,
+                                      const CapsuleSegment& capsuleA,
+                                      const CapsuleSegment& capsuleB,
+                                      const Eigen::Vector3f& linePointA,
+                                      const Eigen::Vector3f& linePointB,
+                                      uint32_t contactIndex,
+                                      CollisionResult& result)
         {
             if (result.numContacts >= 8)
                 return;
 
             const Eigen::Vector3f delta = linePointB - linePointA;
             const float distanceSquared = delta.squaredNorm();
-            const float combinedRadius = radiusA + radiusB;
+            const float combinedRadius = capsuleA.radius + capsuleB.radius;
             if (distanceSquared > combinedRadius * combinedRadius)
                 return;
 
-            Eigen::Vector3f normal = Eigen::Vector3f::Zero();
             float distance = 0.0f;
-
+            Eigen::Vector3f normalAToB = capsuleA.axis.cross(capsuleB.axis);
             if (distanceSquared > 1e-12f)
             {
                 distance = std::sqrt(distanceSquared);
-                normal = delta / distance;
+                normalAToB = delta / distance;
+            }
+            else if (normalAToB.squaredNorm() > 1e-12f)
+            {
+                normalAToB.normalize();
+                if (normalAToB.dot(capsuleB.center - capsuleA.center) < 0.0f)
+                    normalAToB = -normalAToB;
             }
             else
             {
-                normal = capsuleAxisA.cross(capsuleAxisB);
-                const float normalLengthSquared = normal.squaredNorm();
-                if (normalLengthSquared > 1e-12f)
-                {
-                    normal /= std::sqrt(normalLengthSquared);
-                    const Eigen::Vector3f centerDelta = meshB->transform.GetPosition() - meshA->transform.GetPosition();
-                    if (normal.dot(centerDelta) < 0.0f)
-                        normal = -normal;
-                }
-                else
-                {
-                    normal = AnyPerpendicular(capsuleAxisA);
-                }
+                normalAToB = AnyPerpendicular(capsuleA.axis);
             }
 
-            const Eigen::Vector3f pointOnA = linePointA + normal * radiusA;
-            const Eigen::Vector3f pointOnB = linePointB - normal * radiusB;
+            const Eigen::Vector3f pointOnA = linePointA + normalAToB * capsuleA.radius;
+            const Eigen::Vector3f pointOnB = linePointB - normalAToB * capsuleB.radius;
 
             ContactPoint& contact = result.contactPoints[result.numContacts];
             contact.position = 0.5f * (pointOnA + pointOnB);
-            contact.normal = normal;
+            contact.normal = normalAToB;
             contact.penetration = combinedRadius - distance;
-            contact.rA = meshA->transform.GetRotation().toRotationMatrix().transpose() * (pointOnA - meshA->transform.GetPosition());
-            contact.rB = meshB->transform.GetRotation().toRotationMatrix().transpose() * (pointOnB - meshB->transform.GetPosition());
-            contact.id = contactId;
+            contact.rA = ToLocalOffset(meshA, pointOnA);
+            contact.rB = ToLocalOffset(meshB, pointOnB);
+            contact.id = MakeContactID(15u, 2u, 0u, contactIndex);
+
             result.numContacts++;
         }
     }
@@ -143,53 +109,37 @@ namespace CollisionSpace
     CollisionResult CollisionCapsuleCapsule(const Mesh* meshA, const Mesh* meshB)
     {
         CollisionResult result;
-        result.numContacts = 0;
 
-        Eigen::Vector3f segmentStartA = Eigen::Vector3f::Zero();
-        Eigen::Vector3f segmentEndA = Eigen::Vector3f::Zero();
-        Eigen::Vector3f segmentStartB = Eigen::Vector3f::Zero();
-        Eigen::Vector3f segmentEndB = Eigen::Vector3f::Zero();
-        Eigen::Vector3f capsuleAxisA = Eigen::Vector3f::UnitY();
-        Eigen::Vector3f capsuleAxisB = Eigen::Vector3f::UnitY();
-        float radiusA = 0.0f;
-        float radiusB = 0.0f;
+        const CapsuleSegment capsuleA = GetCapsuleSegment(meshA);
+        const CapsuleSegment capsuleB = GetCapsuleSegment(meshB);
 
-        GetCapsuleInnerSegment(meshA, segmentStartA, segmentEndA, capsuleAxisA, radiusA);
-        GetCapsuleInnerSegment(meshB, segmentStartB, segmentEndB, capsuleAxisB, radiusB);
+        const Eigen::Vector3f axisCross = capsuleA.axis.cross(capsuleB.axis);
+        const bool parallelSegments = axisCross.squaredNorm() <= 1e-4f;
 
-        const float combinedRadius = radiusA + radiusB;
-        const Eigen::Vector3f axisCross = capsuleAxisA.cross(capsuleAxisB);
-        const bool areParallel = axisCross.squaredNorm() <= 1e-4f;
-
-        if (areParallel) // allow stacking
+        if (parallelSegments)
         {
             Eigen::Vector3f clippedStartB = Eigen::Vector3f::Zero();
             Eigen::Vector3f clippedEndB = Eigen::Vector3f::Zero();
-            if (ClipSegmentAgainstCapsuleSlab(segmentStartB, segmentEndB, segmentStartA, segmentEndA, capsuleAxisA, clippedStartB, clippedEndB))
+            if (ClipSegmentAgainstSlab(capsuleB.start, capsuleB.end,
+                                       capsuleA.start, capsuleA.end,
+                                       capsuleA.axis,
+                                       clippedStartB, clippedEndB))
             {
                 std::vector<Eigen::Vector3f> candidates;
                 candidates.push_back(clippedStartB);
                 if ((clippedEndB - clippedStartB).squaredNorm() > 1e-12f)
                     candidates.push_back(clippedEndB);
 
-                for (size_t i = 0; i < candidates.size(); ++i)
+                for (int i = 0; i < static_cast<int>(candidates.size()); ++i)
                 {
-                    const Eigen::Vector3f pointB = candidates[i];
-                    const float projection = std::clamp(
-                        capsuleAxisA.dot(pointB - segmentStartA),
-                        0.0f,
-                        (segmentEndA - segmentStartA).norm()
-                    );
-                    const Eigen::Vector3f pointA = segmentStartA + projection * capsuleAxisA;
+                    const Eigen::Vector3f candidateB = candidates[i];
+                    const float segmentLength = (capsuleA.end - capsuleA.start).norm();
+                    const float projection = std::clamp(capsuleA.axis.dot(candidateB - capsuleA.start), 0.0f, segmentLength);
+                    const Eigen::Vector3f candidateA = capsuleA.start + capsuleA.axis * projection;
 
-                    AddCapsuleCapsuleContact(
-                        meshA, meshB,
-                        pointA, pointB,
-                        radiusA, radiusB,
-                        capsuleAxisA, capsuleAxisB,
-                        0xFFFFFFF0u + static_cast<uint32_t>(i),
-                        result
-                    );
+                    AddCapsuleContact(meshA, meshB, capsuleA, capsuleB,
+                                      candidateA, candidateB,
+                                      static_cast<uint32_t>(i), result);
                 }
 
                 if (result.numContacts > 0)
@@ -197,19 +147,13 @@ namespace CollisionSpace
             }
         }
 
-        Eigen::Vector3f closestPointA = Eigen::Vector3f::Zero();
-        Eigen::Vector3f closestPointB = Eigen::Vector3f::Zero();
-        ClosestPointsOnSegments(segmentStartA, segmentEndA, segmentStartB, segmentEndB, closestPointA, closestPointB);
+        Eigen::Vector3f pointA = Eigen::Vector3f::Zero();
+        Eigen::Vector3f pointB = Eigen::Vector3f::Zero();
+        ClosestPointsOnSegments(capsuleA.start, capsuleA.end,
+                                capsuleB.start, capsuleB.end,
+                                pointA, pointB);
 
-        AddCapsuleCapsuleContact(
-            meshA, meshB,
-            closestPointA, closestPointB,
-            radiusA, radiusB,
-            capsuleAxisA, capsuleAxisB,
-            0xFFFFFFF2u,
-            result
-        );
-
+        AddCapsuleContact(meshA, meshB, capsuleA, capsuleB, pointA, pointB, 0u, result);
         return result;
     }
 }

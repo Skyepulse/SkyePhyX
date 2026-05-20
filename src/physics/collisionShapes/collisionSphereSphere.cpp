@@ -1,56 +1,46 @@
-#include <algorithm>
-#include <cmath>
-#include <limits>
 #include "../collision.hpp"
+#include "../collisionAlgorithms/support.hpp"
 
+#include <cmath>
+
+//================================//
 namespace CollisionSpace
 {
     //================================//
     CollisionResult CollisionSphereSphere(const Mesh* meshA, const Mesh* meshB)
     {
         CollisionResult result;
-        result.numContacts = 0;
 
-        const Transform& transformA = meshA->transform;
-        const Transform& transformB = meshB->transform;
+        const Eigen::Vector3f centerA = meshA->transform.GetPosition();
+        const Eigen::Vector3f centerB = meshB->transform.GetPosition();
+        const float radiusA = 0.5f * meshA->transform.GetScale().x();
+        const float radiusB = 0.5f * meshB->transform.GetScale().x();
+        const float combinedRadius = radiusA + radiusB;
 
-        const Eigen::Vector3f positionA = transformA.GetPosition();
-        const Eigen::Vector3f positionB = transformB.GetPosition();
-
-        const Eigen::Vector3f scaleA = transformA.GetScale();
-        const Eigen::Vector3f scaleB = transformB.GetScale();
-
-        // Base sphere mesh has radius 0.5 in model space.
-        const float radiusA = 0.5f * scaleA.x();
-        const float radiusB = 0.5f * scaleB.x();
-
-        const Eigen::Vector3f delta = positionB - positionA;
+        const Eigen::Vector3f delta = centerB - centerA;
         const float distanceSquared = delta.squaredNorm();
-        const float radiusSum = radiusA + radiusB;
-
-        if (distanceSquared > radiusSum * radiusSum)
+        if (distanceSquared > combinedRadius * combinedRadius)
             return result;
 
-        Eigen::Vector3f normal = Eigen::Vector3f::UnitY();
         float distance = 0.0f;
-
+        Eigen::Vector3f normalAToB = Eigen::Vector3f::UnitY();
         if (distanceSquared > 1e-12f)
         {
             distance = std::sqrt(distanceSquared);
-            normal = delta / distance;
+            normalAToB = delta / distance;
         }
 
-        // One manifold point is enough for sphere-sphere collision
-        const Eigen::Vector3f pointOnA = positionA + normal * radiusA;
-        const Eigen::Vector3f pointOnB = positionB - normal * radiusB;
+        // Sphere contacts are a single point on the line of centers.
+        const Eigen::Vector3f pointOnA = centerA + normalAToB * radiusA;
+        const Eigen::Vector3f pointOnB = centerB - normalAToB * radiusB;
 
         ContactPoint& contact = result.contactPoints[0];
         contact.position = 0.5f * (pointOnA + pointOnB);
-        contact.normal = normal;
-        contact.penetration = radiusSum - distance;
-        contact.rA = pointOnA - positionA;
-        contact.rB = pointOnB - positionB;
-        contact.id = 0xFFFFFFFEu;
+        contact.normal = normalAToB;
+        contact.penetration = combinedRadius - distance;
+        contact.rA = ToLocalOffset(meshA, pointOnA);
+        contact.rB = ToLocalOffset(meshB, pointOnB);
+        contact.id = MakeContactID(15u, 0u, 0u, 0u);
 
         result.numContacts = 1;
         return result;
