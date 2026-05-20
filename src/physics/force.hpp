@@ -2,7 +2,6 @@
 #define FORCE_HPP
 
 #include "../helpers/geometry.hpp"
-#include "../rendering/RenderEngine.hpp"
 #include "collision.hpp"
 
 //================================//

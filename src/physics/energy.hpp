@@ -2,7 +2,6 @@
 #define ENERGY_HPP
 
 #include "../helpers/geometry.hpp"
-#include "../rendering/RenderEngine.hpp"
 #include "../helpers/math.hpp"
 #include <array>
 

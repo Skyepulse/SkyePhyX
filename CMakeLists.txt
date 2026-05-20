@@ -234,3 +234,66 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "No build type specified — defaulting to Release")
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
+
+# ============================================
+# Collision Tests
+# ============================================
+option(SKYPHYX_BUILD_TESTS "Build SkyePhyX GoogleTest suites" OFF)
+
+if(SKYPHYX_BUILD_TESTS AND NOT EMSCRIPTEN)
+  enable_testing()
+
+  if(NOT TARGET gtest_main)
+    add_subdirectory("${DAWN_ROOT}/third_party/googletest" "${CMAKE_BINARY_DIR}/googletest_build" EXCLUDE_FROM_ALL)
+  endif()
+
+  set(SKYPHYX_COLLISION_TEST_SOURCES
+      tests/collision/collision_tests.cpp
+      src/helpers/math.cpp
+      src/helpers/geometry.cpp
+      src/physics/collision.cpp
+      src/physics/energy.cpp
+      src/physics/force.cpp
+      src/physics/joint.cpp
+      src/physics/manifold.cpp
+      src/physics/neohookeanfem.cpp
+      src/physics/solver.cpp
+      src/physics/spring.cpp
+      src/physics/stvkfem.cpp
+      src/physics/collisionAlgorithms/gjk.cpp
+      src/physics/collisionAlgorithms/sat.cpp
+      src/physics/collisionAlgorithms/support.cpp
+      src/physics/collisionAlgorithms/voronoiSimplex.cpp
+      src/physics/collisionShapes/collisionBoxBox.cpp
+      src/physics/collisionShapes/collisionBoxCapsule.cpp
+      src/physics/collisionShapes/collisionCapsuleCapsule.cpp
+      src/physics/collisionShapes/collisionHullCapsule.cpp
+      src/physics/collisionShapes/collisionHullHull.cpp
+      src/physics/collisionShapes/collisionSphereBox.cpp
+      src/physics/collisionShapes/collisionSphereCapsule.cpp
+      src/physics/collisionShapes/collisionSphereHull.cpp
+      src/physics/collisionShapes/collisionSphereSphere.cpp
+  )
+
+  add_executable(SkyePhyXCollisionTests ${SKYPHYX_COLLISION_TEST_SOURCES})
+  target_include_directories(SkyePhyXCollisionTests PRIVATE
+      ${CMAKE_SOURCE_DIR}/src
+      ${eigen_SOURCE_DIR}
+      ${qhull_SOURCE_DIR}/src
+  )
+
+  target_compile_definitions(SkyePhyXCollisionTests PRIVATE
+      EIGEN_DONT_PARALLELIZE
+  )
+
+  if(TARGET qhullcpp AND TARGET qhullstatic_r)
+    target_link_libraries(SkyePhyXCollisionTests PRIVATE qhullcpp qhullstatic_r)
+  elseif(TARGET qhullcpp AND TARGET qhull_r)
+    target_link_libraries(SkyePhyXCollisionTests PRIVATE qhullcpp qhull_r)
+  endif()
+
+  target_link_libraries(SkyePhyXCollisionTests PRIVATE gtest_main Threads::Threads)
+
+  include(GoogleTest)
+  gtest_discover_tests(SkyePhyXCollisionTests)
+endif()

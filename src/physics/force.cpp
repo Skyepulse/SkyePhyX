@@ -1,6 +1,8 @@
 #include "force.hpp"
 #include "solver.hpp"
 
+#include <algorithm>
+
 //================================//
 Force::Force(Solver* solver, std::vector<Mesh*> linkedBodies, int numConstraintPoints): solver(solver), linkedBodies(linkedBodies)
 {
