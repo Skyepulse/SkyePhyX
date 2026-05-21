@@ -22,6 +22,25 @@ struct EdgeQuery
 };
 
 //================================//
+enum class ConvexSATAxisType
+{
+    None,
+    FaceA,
+    FaceB,
+    Edge
+};
+
+//================================//
+struct ConvexSATCache
+{
+    bool isValid = false;
+    ConvexSATAxisType axisType = ConvexSATAxisType::None;
+    uint16_t faceIndex = 0;
+    uint16_t edgeIndexA = 0;
+    uint16_t edgeIndexB = 0;
+};
+
+//================================//
 struct ContactPoint
 {
     Eigen::Vector3f position;

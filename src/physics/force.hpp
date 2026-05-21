@@ -154,15 +154,18 @@ struct ManifoldContactInfo
 //================================//
 struct Manifold: Force
 {
-    static constexpr int NUM_CONSTRAINTS = 24;
+    // ReactPhysics3D reduces each convex manifold to a four-point patch.
+    // Each point owns one normal and two tangent constraint rows here.
+    static constexpr int MAX_CONTACT_POINTS = 4;
+    static constexpr int NUM_CONSTRAINTS = MAX_CONTACT_POINTS * 3;
     Manifold(Solver* solver, Mesh* bodyA, Mesh* bodyB);
 
-    ContactPoint contactPoints[8]; // Max 8 contact points
-    ContactPoint oldContactPoints[8];
-    ManifoldContactInfo contactInfos[8];
+    ContactPoint contactPoints[MAX_CONTACT_POINTS];
+    ManifoldContactInfo contactInfos[MAX_CONTACT_POINTS];
     int numContactPoints = 0;
 
     float friction = 0.f;
+    ConvexSATCache convexSATCache;
 
     Mesh* bodyA = nullptr;
     Mesh* bodyB = nullptr;
@@ -182,6 +185,7 @@ struct Manifold: Force
         this->bodyB = bodyB;
         this->linkedBodies = {bodyA, bodyB};
         this->numContactPoints = 0;
+        this->convexSATCache = ConvexSATCache{};
     }
 };
 

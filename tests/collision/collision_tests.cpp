@@ -34,9 +34,31 @@ namespace
     };
 
     //================================//
+    struct InterpenetrationCase
+    {
+        std::string name;
+        ModelType typeA = ModelType_TestConvexMesh;
+        ModelType typeB = ModelType_TestConvexMesh;
+        Eigen::Vector3f positionA = Eigen::Vector3f::Zero();
+        Eigen::Vector3f positionB = Eigen::Vector3f::Zero();
+        Eigen::Vector3f scaleA = Eigen::Vector3f::Ones();
+        Eigen::Vector3f scaleB = Eigen::Vector3f::Ones();
+        Quaternionf rotationA = Quaternionf::Identity();
+        Quaternionf rotationB = Quaternionf::Identity();
+    };
+
+    //================================//
     static Quaternionf RotationAroundZ(float radians)
     {
         return Quaternionf(Eigen::AngleAxisf(radians, Eigen::Vector3f::UnitZ()));
+    }
+
+    //================================//
+    static Quaternionf RotationXYZ(float radiansX, float radiansY, float radiansZ)
+    {
+        return Quaternionf(Eigen::AngleAxisf(radiansZ, Eigen::Vector3f::UnitZ()) *
+                           Eigen::AngleAxisf(radiansY, Eigen::Vector3f::UnitY()) *
+                           Eigen::AngleAxisf(radiansX, Eigen::Vector3f::UnitX()));
     }
 
     //================================//
@@ -75,6 +97,14 @@ namespace
         EXPECT_NEAR(actual.x(), expected.x(), tolerance);
         EXPECT_NEAR(actual.y(), expected.y(), tolerance);
         EXPECT_NEAR(actual.z(), expected.z(), tolerance);
+    }
+
+    //================================//
+    static void ExpectFiniteVector(const Eigen::Vector3f& vector)
+    {
+        EXPECT_TRUE(std::isfinite(vector.x()));
+        EXPECT_TRUE(std::isfinite(vector.y()));
+        EXPECT_TRUE(std::isfinite(vector.z()));
     }
 
     //================================//
@@ -144,6 +174,62 @@ namespace
         Solver solver;
         for (int i = 0; i < static_cast<int>(cases.size()); ++i)
             RunCollisionCase(solver, cases[i]);
+    }
+
+    //================================//
+    static void RunInterpenetrationCase(Solver& solver, const InterpenetrationCase& testCase)
+    {
+        SCOPED_TRACE(testCase.name);
+
+        Mesh* meshA = solver.AddBody(testCase.typeA, 1.0f, 0.5f,
+                                     testCase.positionA, testCase.scaleA,
+                                     Eigen::Vector3f::Zero(), testCase.rotationA,
+                                     Eigen::Vector3f::Zero(), false);
+        Mesh* meshB = solver.AddBody(testCase.typeB, 1.0f, 0.5f,
+                                     testCase.positionB, testCase.scaleB,
+                                     Eigen::Vector3f::Zero(), testCase.rotationB,
+                                     Eigen::Vector3f::Zero(), false);
+
+        const CollisionResult result = CollisionSpace::CollisionMeshMesh(meshA, meshB);
+        ASSERT_GT(result.numContacts, 0);
+
+        for (int contactIndex = 0; contactIndex < result.numContacts; ++contactIndex)
+        {
+            const ContactPoint& contact = result.contactPoints[contactIndex];
+            const Eigen::Vector3f worldA = WorldAnchor(meshA, contact.rA);
+            const Eigen::Vector3f worldB = WorldAnchor(meshB, contact.rB);
+            const Eigen::Vector3f expectedMidPoint = 0.5f * (worldA + worldB);
+
+            ExpectFiniteVector(contact.normal);
+            ExpectFiniteVector(worldA);
+            ExpectFiniteVector(worldB);
+            EXPECT_NEAR(contact.normal.norm(), 1.0f, NORMAL_TOLERANCE);
+            EXPECT_GT(contact.penetration, COLLISION_MARGIN);
+            EXPECT_LE(contact.normal.dot(worldB - worldA), POINT_TOLERANCE);
+            ExpectVectorNear(contact.position, expectedMidPoint, POINT_TOLERANCE);
+        }
+
+        Manifold manifold(&solver, meshA, meshB);
+        ASSERT_TRUE(manifold.Initialize());
+        EXPECT_GT(manifold.numContactPoints, 0);
+        EXPECT_LE(manifold.numContactPoints, 4);
+
+        for (int contactIndex = 0; contactIndex < manifold.numContactPoints; ++contactIndex)
+        {
+            EXPECT_LT(manifold.contactInfos[contactIndex].C0[0], 0.0f);
+            EXPECT_GT(manifold.contactPoints[contactIndex].penetration, COLLISION_MARGIN);
+            EXPECT_GT(manifold.constraintPoints[contactIndex * 3].penalty, 1.0f);
+        }
+    }
+
+    //================================//
+    static void RunInterpenetrationCases(const std::vector<InterpenetrationCase>& cases)
+    {
+        ASSERT_EQ(cases.size(), 10u);
+
+        Solver solver;
+        for (int i = 0; i < static_cast<int>(cases.size()); ++i)
+            RunInterpenetrationCase(solver, cases[i]);
     }
 
     //================================//
@@ -457,6 +543,46 @@ namespace
             outCases.push_back(testCase);
         }
     }
+
+    //================================//
+    static void AppendDeepHullHullCases(std::vector<InterpenetrationCase>& outCases)
+    {
+        const std::array<Eigen::Vector3f, 10> positions =
+        {{
+            Eigen::Vector3f(0.00f, 0.00f, 0.00f),
+            Eigen::Vector3f(0.06f, -0.04f, 0.03f),
+            Eigen::Vector3f(-0.08f, 0.05f, -0.02f),
+            Eigen::Vector3f(0.12f, 0.02f, 0.08f),
+            Eigen::Vector3f(-0.11f, -0.06f, 0.07f),
+            Eigen::Vector3f(0.04f, 0.13f, -0.05f),
+            Eigen::Vector3f(-0.03f, -0.12f, -0.08f),
+            Eigen::Vector3f(0.14f, -0.10f, 0.01f),
+            Eigen::Vector3f(-0.15f, 0.04f, 0.05f),
+            Eigen::Vector3f(0.02f, -0.03f, -0.14f)
+        }};
+        const std::array<Quaternionf, 10> rotations =
+        {{
+            RotationXYZ(0.00f, 0.00f, 0.00f),
+            RotationXYZ(0.24f, 0.00f, 0.49f),
+            RotationXYZ(-0.33f, 0.27f, -0.18f),
+            RotationXYZ(0.52f, -0.31f, 0.10f),
+            RotationXYZ(-0.44f, 0.38f, 0.63f),
+            RotationXYZ(0.12f, 0.57f, -0.46f),
+            RotationXYZ(-0.61f, -0.21f, 0.35f),
+            RotationXYZ(0.37f, -0.53f, -0.28f),
+            RotationXYZ(-0.18f, 0.41f, 0.72f),
+            RotationXYZ(0.66f, 0.19f, -0.39f)
+        }};
+
+        for (int i = 0; i < 10; ++i)
+        {
+            InterpenetrationCase testCase;
+            testCase.name = "deep-hull-hull-" + std::to_string(i);
+            testCase.positionB = positions[i];
+            testCase.rotationB = rotations[i];
+            outCases.push_back(testCase);
+        }
+    }
 }
 
 //================================//
@@ -537,4 +663,92 @@ TEST(CollisionNarrowphase, HullHullContactAnchors)
     std::vector<CollisionCase> cases;
     AppendHullHullCases(cases);
     RunCollisionCases(cases);
+}
+
+//================================//
+TEST(CollisionNarrowphase, HullHullDeepInterpenetrations)
+{
+    std::vector<InterpenetrationCase> cases;
+    AppendDeepHullHullCases(cases);
+    RunInterpenetrationCases(cases);
+}
+
+//================================//
+TEST(CollisionManifold, HullHullLocalPatchPersistsThroughSmallMotion)
+{
+    Solver solver;
+    Mesh* meshA = solver.AddBody(ModelType_TestConvexMesh, 1.0f, 0.5f,
+                                 Eigen::Vector3f::Zero(), Eigen::Vector3f::Ones(),
+                                 Eigen::Vector3f::Zero(), RotationXYZ(0.19f, -0.08f, 0.31f),
+                                 Eigen::Vector3f::Zero(), false);
+    Mesh* meshB = solver.AddBody(ModelType_TestConvexMesh, 1.0f, 0.5f,
+                                 Eigen::Vector3f(0.05f, -0.03f, 0.04f), Eigen::Vector3f::Ones(),
+                                 Eigen::Vector3f::Zero(), RotationXYZ(-0.22f, 0.35f, -0.17f),
+                                 Eigen::Vector3f::Zero(), false);
+
+    Manifold manifold(&solver, meshA, meshB);
+    ASSERT_TRUE(manifold.Initialize());
+    ASSERT_GT(manifold.numContactPoints, 0);
+    ASSERT_LE(manifold.numContactPoints, 4);
+
+    for (int contactIndex = 0; contactIndex < manifold.numContactPoints; ++contactIndex)
+    {
+        manifold.constraintPoints[contactIndex * 3 + 0].penalty = 40.0f + static_cast<float>(contactIndex);
+        manifold.constraintPoints[contactIndex * 3 + 0].lambda = -2.0f;
+    }
+
+    meshB->transform.SetPosition(Eigen::Vector3f(0.051f, -0.029f, 0.039f));
+    meshB->transform.SetRotation(RotationXYZ(-0.219f, 0.351f, -0.169f));
+
+    ASSERT_TRUE(manifold.Initialize());
+    EXPECT_GT(manifold.numContactPoints, 0);
+    EXPECT_LE(manifold.numContactPoints, 4);
+
+    int persistentContactCount = 0;
+    for (int contactIndex = 0; contactIndex < manifold.numContactPoints; ++contactIndex)
+    {
+        if (manifold.constraintPoints[contactIndex * 3 + 0].penalty > 20.0f)
+            persistentContactCount++;
+    }
+
+    EXPECT_GT(persistentContactCount, 0);
+}
+
+//================================//
+TEST(CollisionManifold, CapsuleContactsStartWithNormalSupport)
+{
+    Solver solver;
+    Mesh* capsuleA = solver.AddBody(ModelType_Capsule, 1.0f, 0.5f,
+                                    Eigen::Vector3f::Zero(), Eigen::Vector3f::Ones(),
+                                    Eigen::Vector3f::Zero(), Quaternionf::Identity(),
+                                    Eigen::Vector3f::Zero(), false);
+    Mesh* capsuleB = solver.AddBody(ModelType_Capsule, 1.0f, 0.5f,
+                                    Eigen::Vector3f(0.45f, 0.0f, 0.0f), Eigen::Vector3f::Ones(),
+                                    Eigen::Vector3f::Zero(), Quaternionf::Identity(),
+                                    Eigen::Vector3f::Zero(), false);
+    Mesh* box = solver.AddBody(ModelType_Cube, 1.0f, 0.5f,
+                               Eigen::Vector3f(2.0f, 0.0f, 0.0f), Eigen::Vector3f::Ones(),
+                               Eigen::Vector3f::Zero(), Quaternionf::Identity(),
+                               Eigen::Vector3f::Zero(), false);
+    Mesh* capsuleOnBox = solver.AddBody(ModelType_Capsule, 1.0f, 0.5f,
+                                        Eigen::Vector3f(2.72f, 0.0f, 0.0f), Eigen::Vector3f::Ones(),
+                                        Eigen::Vector3f::Zero(), Quaternionf::Identity(),
+                                        Eigen::Vector3f::Zero(), false);
+
+    Manifold capsuleManifold(&solver, capsuleA, capsuleB);
+    Manifold boxManifold(&solver, box, capsuleOnBox);
+
+    ASSERT_TRUE(capsuleManifold.Initialize());
+    ASSERT_TRUE(boxManifold.Initialize());
+
+    for (Manifold* manifold : { &capsuleManifold, &boxManifold })
+    {
+        SCOPED_TRACE(manifold == &capsuleManifold ? "capsule-capsule" : "box-capsule");
+        ASSERT_GT(manifold->numContactPoints, 0);
+        for (int contactIndex = 0; contactIndex < manifold->numContactPoints; ++contactIndex)
+        {
+            EXPECT_LT(manifold->contactInfos[contactIndex].C0[0], 0.0f);
+            EXPECT_GT(manifold->constraintPoints[contactIndex * 3].penalty, 1.0f);
+        }
+    }
 }

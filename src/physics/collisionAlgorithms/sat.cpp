@@ -12,6 +12,7 @@ namespace CollisionSpace
 {
     static constexpr float SEPARATING_AXIS_RELATIVE_TOLERANCE = 1.002f;
     static constexpr float SEPARATING_AXIS_ABSOLUTE_TOLERANCE = 0.0005f;
+    static constexpr float EDGE_AXIS_PARALLEL_TOLERANCE = 0.00001f;
     //================================//
     struct CapsuleFaceQuery
     {
@@ -88,14 +89,54 @@ namespace CollisionSpace
         if ((normalB1.cross(normalB0)).dot(edgeDirectionB) < 0.0f)
             std::swap(normalB0, normalB1);
 
-        const float cba = normalB0.dot(normalA1.cross(normalA0));
-        const float dba = normalB1.dot(normalA1.cross(normalA0));
-        const float adc = normalA0.dot(normalB1.cross(normalB0));
-        const float bdc = normalA1.dot(normalB1.cross(normalB0));
+        // Do not forget to negate the B normals when computing the Minkowski face condition. The edge axes are
+        // computed in world space, so the B normals are also in world space and should be negated to represent the Minkowski
+        // difference normals.
+        const Eigen::Vector3f minkowskiNormalB0 = -normalB0;
+        const Eigen::Vector3f minkowskiNormalB1 = -normalB1;
+
+        const float cba = minkowskiNormalB0.dot(normalA1.cross(normalA0));
+        const float dba = minkowskiNormalB1.dot(normalA1.cross(normalA0));
+        const float adc = normalA0.dot(minkowskiNormalB1.cross(minkowskiNormalB0));
+        const float bdc = normalA1.dot(minkowskiNormalB1.cross(minkowskiNormalB0));
 
         return (cba * dba < 0.0f) &&
                (adc * bdc < 0.0f) &&
                (cba * bdc > 0.0f);
+    }
+
+    //================================//
+    static FaceQuery QueryHullFaceDirection(const Transform& transformA,
+                                            const ConvexHull& hullA,
+                                            uint16_t faceIndex,
+                                            const Transform& transformB,
+                                            const ConvexHull& hullB)
+    {
+        FaceQuery query;
+        query.separation = std::numeric_limits<double>::infinity();
+        query.faceIndex = faceIndex;
+
+        if (faceIndex >= hullA.faceCount() || hullB.vertexCount() == 0)
+            return query;
+
+        const HullFace& faceA = hullA.faces[faceIndex];
+        if (faceA.vertexIndices.empty() || faceA.vertexIndices[0] >= hullA.vertices.size())
+            return query;
+
+        const Eigen::Vector3f planeNormal = TransformNormalToWorld(transformA, faceA.normal);
+        if (planeNormal.squaredNorm() <= 1e-12f)
+            return query;
+
+        const Eigen::Vector3f planePoint =
+            transformA.TransformPoint(hullA.vertices[faceA.vertexIndices[0]].position);
+        const Eigen::Matrix3f linearB =
+            transformB.GetRotation().toRotationMatrix() * transformB.GetScale().asDiagonal();
+        const Eigen::Vector3f supportDirectionLocalB = linearB.transpose() * (-planeNormal);
+        const Eigen::Vector3f supportPointLocalB = hullB.GetSupport(supportDirectionLocalB);
+        const Eigen::Vector3f supportPointWorldB = transformB.TransformPoint(supportPointLocalB);
+
+        query.separation = static_cast<double>(planeNormal.dot(supportPointWorldB - planePoint));
+        return query;
     }
 
     //================================//
@@ -115,28 +156,16 @@ namespace CollisionSpace
             return query;
         }
 
-        const Eigen::Matrix3f linearB = transformB.GetRotation().toRotationMatrix() * transformB.GetScale().asDiagonal();
         for (int faceIndex = 0; faceIndex < static_cast<int>(hullA.faceCount()); ++faceIndex)
         {
-            const HullFace& faceA = hullA.faces[faceIndex];
-            if (faceA.vertexIndices.empty() || faceA.vertexIndices[0] >= hullA.vertices.size())
-                continue;
-
-            const Eigen::Vector3f planeNormal = TransformNormalToWorld(transformA, faceA.normal);
-            if (planeNormal.squaredNorm() <= 1e-12f)
-                continue;
-
-            const Eigen::Vector3f planePoint = transformA.TransformPoint(hullA.vertices[faceA.vertexIndices[0]].position);
-            const Eigen::Vector3f supportDirectionLocalB = linearB.transpose() * (-planeNormal);
-            const Eigen::Vector3f supportPointLocalB = hullB.GetSupport(supportDirectionLocalB);
-            const Eigen::Vector3f supportPointWorldB = transformB.TransformPoint(supportPointLocalB);
-
-            const double separation = static_cast<double>(planeNormal.dot(supportPointWorldB - planePoint));
+            const FaceQuery faceQuery =
+                QueryHullFaceDirection(transformA, hullA, static_cast<uint16_t>(faceIndex), transformB, hullB);
+            const double separation = faceQuery.separation;
 
             if (separation > query.separation)
             {
                 query.separation = separation;
-                query.faceIndex = static_cast<uint16_t>(faceIndex);
+                query.faceIndex = faceQuery.faceIndex;
             }
         }
 
@@ -205,7 +234,9 @@ namespace CollisionSpace
 
                 Eigen::Vector3f axis = edgeDirectionA.cross(edgeDirectionB);
                 const float axisLengthSquared = axis.squaredNorm();
-                if (axisLengthSquared <= 1e-12f)
+
+                // Almost parallel
+                if (axisLengthSquared < EDGE_AXIS_PARALLEL_TOLERANCE)
                     continue;
 
                 axis /= std::sqrt(axisLengthSquared);
@@ -215,7 +246,12 @@ namespace CollisionSpace
                 const Eigen::Vector3f supportDirectionLocalB = linearB.transpose() * (-axis);
                 const Eigen::Vector3f supportPointLocalB = hullB.GetSupport(supportDirectionLocalB);
                 const Eigen::Vector3f supportPointWorldB = transformB.TransformPoint(supportPointLocalB);
-                const double separation = static_cast<double>(axis.dot(supportPointWorldB - edgeAStart));
+                const double supportSeparation = static_cast<double>(axis.dot(supportPointWorldB - edgeAStart));
+
+                const double edgePairSeparation = static_cast<double>(axis.dot(edgeBStart - edgeAStart));
+                double separation = supportSeparation;
+                if (supportSeparation <= 0.0 && edgePairSeparation <= 0.0)
+                    separation = edgePairSeparation;
 
                 if (separation > query.separation)
                 {
@@ -362,7 +398,7 @@ namespace CollisionSpace
 
         Eigen::Vector3f normal = (edgeAEnd - edgeAStart).cross(edgeBEnd - edgeBStart);
         const float normalLengthSquared = normal.squaredNorm();
-        if (normalLengthSquared <= 1e-12f)
+        if (normalLengthSquared < EDGE_AXIS_PARALLEL_TOLERANCE)
             return;
 
         normal /= std::sqrt(normalLengthSquared);
@@ -376,7 +412,8 @@ namespace CollisionSpace
         ContactPoint& contact = result.contactPoints[0];
         contact.position = 0.5f * (pointA + pointB);
         contact.normal = normal;
-        contact.penetration = std::max(0.0f, -normal.dot(pointB - pointA));
+       
+        contact.penetration = std::max(0.0f, static_cast<float>(-edgeQuery.separation));
         contact.rA = ToLocalOffset(meshA, pointA);
         contact.rB = ToLocalOffset(meshB, pointB);
         contact.id = MakeContactID(2u, edgeQuery.edgeIndexA, edgeQuery.edgeIndexB, 0u);
@@ -702,7 +739,78 @@ namespace CollisionSpace
     }
 
     //================================//
-    CollisionResult CollideHullHullSAT(const Mesh* meshA, const Mesh* meshB)
+    static bool TryCreateCachedHullFaceContacts(const Mesh* meshA,
+                                                const ConvexHull& hullA,
+                                                const Mesh* meshB,
+                                                const ConvexHull& hullB,
+                                                const ConvexSATCache& cache,
+                                                CollisionResult& result)
+    {
+        if (!cache.isValid)
+            return false;
+
+        if (cache.axisType == ConvexSATAxisType::FaceA)
+        {
+            const FaceQuery faceQuery =
+                QueryHullFaceDirection(meshA->transform, hullA, cache.faceIndex, meshB->transform, hullB);
+            if (faceQuery.separation > 0.0)
+                return false;
+
+            CreateHullFaceContacts(meshA, hullA, meshB, hullB, faceQuery, result);
+            return result.numContacts > 0;
+        }
+
+        if (cache.axisType == ConvexSATAxisType::FaceB)
+        {
+            const FaceQuery faceQuery =
+                QueryHullFaceDirection(meshB->transform, hullB, cache.faceIndex, meshA->transform, hullA);
+            if (faceQuery.separation > 0.0)
+                return false;
+
+            CreateHullFaceContacts(meshB, hullB, meshA, hullA, faceQuery, result);
+            for (int contactIndex = 0; contactIndex < result.numContacts; ++contactIndex)
+            {
+                std::swap(result.contactPoints[contactIndex].rA, result.contactPoints[contactIndex].rB);
+                result.contactPoints[contactIndex].normal = -result.contactPoints[contactIndex].normal;
+            }
+            return result.numContacts > 0;
+        }
+
+        return false;
+    }
+
+    //================================//
+    static void StoreConvexSATFaceCache(ConvexSATCache* cache, ConvexSATAxisType axisType, uint16_t faceIndex)
+    {
+        if (!cache)
+            return;
+
+        cache->isValid = true;
+        cache->axisType = axisType;
+        cache->faceIndex = faceIndex;
+    }
+
+    //================================//
+    static void StoreConvexSATEdgeCache(ConvexSATCache* cache, const EdgeQuery& edgeQuery)
+    {
+        if (!cache)
+            return;
+
+        cache->isValid = true;
+        cache->axisType = ConvexSATAxisType::Edge;
+        cache->edgeIndexA = edgeQuery.edgeIndexA;
+        cache->edgeIndexB = edgeQuery.edgeIndexB;
+    }
+
+    //================================//
+    static void ClearConvexSATCache(ConvexSATCache* cache)
+    {
+        if (cache)
+            *cache = ConvexSATCache{};
+    }
+
+    //================================//
+    CollisionResult CollideHullHullSAT(const Mesh* meshA, const Mesh* meshB, ConvexSATCache* cache)
     {
         CollisionResult result;
 
@@ -714,22 +822,41 @@ namespace CollisionSpace
             return result;
         }
 
+        // For a persistent manifold, first trythe previous
+        // SAT face axis while it still clips. That keeps a stack on the same
+        // face patch instead of changing reference features every frame. ( from React3D's SAT implementation )
+        if (cache && TryCreateCachedHullFaceContacts(meshA, hullA, meshB, hullB, *cache, result))
+            return result;
+
         const FaceQuery faceQueryA = QueryHullFaceDirections(meshA->transform, hullA, meshB->transform, hullB);
         if (faceQueryA.separation > 0.0)
+        {
+            ClearConvexSATCache(cache);
             return result;
+        }
 
         const FaceQuery faceQueryB = QueryHullFaceDirections(meshB->transform, hullB, meshA->transform, hullA);
         if (faceQueryB.separation > 0.0)
+        {
+            ClearConvexSATCache(cache);
             return result;
+        }
 
         const EdgeQuery edgeQuery = QueryHullEdgeDirections(meshA->transform, hullA, meshB->transform, hullB);
         if (edgeQuery.separation > 0.0)
+        {
+            ClearConvexSATCache(cache);
             return result;
+        }
 
         const double bestFaceSeparation = std::max(faceQueryA.separation, faceQueryB.separation);
         if (ShouldPreferEdgeAxis(edgeQuery.separation, bestFaceSeparation, 0.0))
         {
             CreateHullEdgeContact(meshA, hullA, meshB, hullB, edgeQuery, result);
+            if (result.numContacts > 0)
+                StoreConvexSATEdgeCache(cache, edgeQuery);
+            else
+                ClearConvexSATCache(cache);
             return result;
         }
 
@@ -739,6 +866,8 @@ namespace CollisionSpace
                            SEPARATING_AXIS_ABSOLUTE_TOLERANCE)
         {
             CreateHullFaceContacts(meshA, hullA, meshB, hullB, faceQueryA, result);
+            if (result.numContacts > 0)
+                StoreConvexSATFaceCache(cache, ConvexSATAxisType::FaceA, faceQueryA.faceIndex);
         }
         else
         {
@@ -748,7 +877,12 @@ namespace CollisionSpace
                 std::swap(result.contactPoints[contactIndex].rA, result.contactPoints[contactIndex].rB);
                 result.contactPoints[contactIndex].normal = -result.contactPoints[contactIndex].normal;
             }
+            if (result.numContacts > 0)
+                StoreConvexSATFaceCache(cache, ConvexSATAxisType::FaceB, faceQueryB.faceIndex);
         }
+
+        if (result.numContacts == 0)
+            ClearConvexSATCache(cache);
 
         return result;
     }

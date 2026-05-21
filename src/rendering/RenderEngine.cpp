@@ -188,7 +188,6 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui::SliderFloat("Gamma", &this->solver->gamma, 0.0f, 1.0f);
     ImGui::InputFloat("Beta", &this->solver->beta, 1000.0f, 1000000.0f, "%.1f");
     ImGui::SliderFloat("Step value", &this->solver->stepValue, 0.001f, 0.1f);
-    ImGui::InputFloat("On Penetration Penalty", &this->solver->onPenetrationPenalty, 100.0f, 10000.0f, "%.1f");
     ImGui::End();
 
     if (this->showPerformanceMetrics)

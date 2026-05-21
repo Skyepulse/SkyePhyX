@@ -1,7 +1,17 @@
 #include "force.hpp"
 #include "solver.hpp"
+#include "collisionAlgorithms/sat.hpp"
+
+#include <algorithm>
+#include <limits>
 
 constexpr float PENALTY_MIN = 1.0f;
+constexpr float CONTACT_MATCH_DISTANCE = 0.02f;
+constexpr float CONTACT_MATCH_DISTANCE_SQUARED = CONTACT_MATCH_DISTANCE * CONTACT_MATCH_DISTANCE;
+constexpr float CONTACT_MATCH_NORMAL_DOT = 0.95f;
+constexpr float DUPLICATE_CONTACT_DISTANCE = 0.001f;
+constexpr float DUPLICATE_CONTACT_DISTANCE_SQUARED = DUPLICATE_CONTACT_DISTANCE * DUPLICATE_CONTACT_DISTANCE;
+constexpr int MAX_SOLVER_MANIFOLD_CONTACTS = 4;
 
 //================================//
 static std::vector<Mesh*> FilterNulls(std::initializer_list<Mesh*> bodies)
@@ -19,6 +29,247 @@ static Eigen::Vector3f GetWorldContactOffset(const Mesh* body, const Eigen::Matr
         return storedOffset;
 
     return rotation * storedOffset;
+}
+
+//================================//
+static bool IsConvexPolyhedronMesh(const Mesh* body)
+{
+    return body &&
+           body->modelType != ModelType_Sphere &&
+           body->modelType != ModelType_Capsule;
+}
+
+//================================//
+static float GetNewNormalContactPenalty(const Solver* solver, float normalGap)
+{
+    // New contacts need enough normal support on their first primal solve.
+    // The dual loop will adapt the penalty afterwards.  Using beta keeps the
+    // bootstrap tied to the existing AVBD constraint update instead of adding
+    // a separate penetration tuning knob.
+    const float violation = std::max(0.0f, -normalGap);
+    return std::max(PENALTY_MIN, solver->beta * violation);
+}
+
+//================================//
+static void RemoveCollisionContact(CollisionResult& collision, int contactIndex)
+{
+    for (int i = contactIndex; i + 1 < collision.numContacts; ++i)
+        collision.contactPoints[i] = collision.contactPoints[i + 1];
+
+    collision.numContacts--;
+}
+
+//================================//
+static void RemoveDuplicatedCollisionContacts(CollisionResult& collision)
+{
+    for (int i = 0; i < collision.numContacts; ++i)
+    {
+        for (int j = i + 1; j < collision.numContacts; ++j)
+        {
+            const bool similarNormal =
+                collision.contactPoints[i].normal.dot(collision.contactPoints[j].normal) >= CONTACT_MATCH_NORMAL_DOT;
+            const bool sameLocalPoint =
+                (collision.contactPoints[i].rA - collision.contactPoints[j].rA).squaredNorm() <=
+                DUPLICATE_CONTACT_DISTANCE_SQUARED;
+
+            if (!similarNormal || !sameLocalPoint)
+                continue;
+
+            // Keep the deeper candidate when clipping returns the same local patch twice.
+            if (collision.contactPoints[j].penetration > collision.contactPoints[i].penetration)
+                collision.contactPoints[i] = collision.contactPoints[j];
+
+            RemoveCollisionContact(collision, j);
+            j--;
+        }
+    }
+}
+
+//================================//
+static int FindSearchDirectionContact(const CollisionResult& collision, const bool selected[8])
+{
+    const Eigen::Vector3f searchDirection(1.0f, 1.0f, 1.0f);
+    int bestContactIndex = -1;
+    float bestDot = -std::numeric_limits<float>::max();
+
+    for (int i = 0; i < collision.numContacts; ++i)
+    {
+        if (selected[i])
+            continue;
+
+        const float dot = searchDirection.dot(collision.contactPoints[i].rA);
+        if (dot > bestDot)
+        {
+            bestDot = dot;
+            bestContactIndex = i;
+        }
+    }
+
+    return bestContactIndex;
+}
+
+//================================//
+static int FindFarthestContact(const CollisionResult& collision, const bool selected[8], int pointIndex)
+{
+    int bestContactIndex = -1;
+    float bestDistance = -1.0f;
+
+    for (int i = 0; i < collision.numContacts; ++i)
+    {
+        if (selected[i])
+            continue;
+
+        const float distance =
+            (collision.contactPoints[pointIndex].rA - collision.contactPoints[i].rA).squaredNorm();
+        if (distance >= bestDistance)
+        {
+            bestDistance = distance;
+            bestContactIndex = i;
+        }
+    }
+
+    return bestContactIndex;
+}
+
+//================================//
+static float ComputeContactArea(const ContactPoint& pointA,
+                                const ContactPoint& pointB,
+                                const ContactPoint& pointC,
+                                const Eigen::Vector3f& localNormal)
+{
+    const Eigen::Vector3f fromCToA = pointA.rA - pointC.rA;
+    const Eigen::Vector3f fromCToB = pointB.rA - pointC.rA;
+    return fromCToA.cross(fromCToB).dot(localNormal);
+}
+
+//================================//
+static int FindLargestAreaContact(const CollisionResult& collision,
+                                  const bool selected[8],
+                                  int pointIndexA,
+                                  int pointIndexB,
+                                  const Eigen::Vector3f& localNormal,
+                                  float& selectedArea)
+{
+    int positiveAreaIndex = -1;
+    int negativeAreaIndex = -1;
+    float largestArea = 0.0f;
+    float smallestArea = 0.0f;
+
+    for (int i = 0; i < collision.numContacts; ++i)
+    {
+        if (selected[i])
+            continue;
+
+        const float area = ComputeContactArea(collision.contactPoints[pointIndexA],
+                                              collision.contactPoints[pointIndexB],
+                                              collision.contactPoints[i],
+                                              localNormal);
+        if (area >= largestArea)
+        {
+            largestArea = area;
+            positiveAreaIndex = i;
+        }
+        if (area <= smallestArea)
+        {
+            smallestArea = area;
+            negativeAreaIndex = i;
+        }
+    }
+
+    if (largestArea > -smallestArea)
+    {
+        selectedArea = largestArea;
+        return positiveAreaIndex;
+    }
+
+    selectedArea = smallestArea;
+    return negativeAreaIndex;
+}
+
+//================================//
+static int FindOppositeAreaContact(const CollisionResult& collision,
+                                   const bool selected[8],
+                                   const int selectedIndices[4],
+                                   const Eigen::Vector3f& localNormal,
+                                   bool previousAreaPositive)
+{
+    int bestContactIndex = -1;
+    float bestArea = 0.0f;
+
+    for (int i = 0; i < collision.numContacts; ++i)
+    {
+        if (selected[i])
+            continue;
+
+        if (bestContactIndex < 0)
+            bestContactIndex = i;
+
+        for (int edgeIndex = 0; edgeIndex < 3; ++edgeIndex)
+        {
+            const int edgePointA = selectedIndices[edgeIndex];
+            const int edgePointB = selectedIndices[(edgeIndex + 1) % 3];
+            const float area = ComputeContactArea(collision.contactPoints[edgePointA],
+                                                  collision.contactPoints[edgePointB],
+                                                  collision.contactPoints[i],
+                                                  localNormal);
+
+            if (previousAreaPositive && area <= bestArea)
+            {
+                bestArea = area;
+                bestContactIndex = i;
+            }
+            else if (!previousAreaPositive && area >= bestArea)
+            {
+                bestArea = area;
+                bestContactIndex = i;
+            }
+        }
+    }
+
+    return bestContactIndex;
+}
+
+//================================//
+static void ReduceCollisionContacts(const Mesh* bodyA, CollisionResult& collision)
+{
+    RemoveDuplicatedCollisionContacts(collision);
+    if (collision.numContacts <= MAX_SOLVER_MANIFOLD_CONTACTS)
+        return;
+
+    bool selected[8] = {};
+    int selectedIndices[4] = {};
+
+    selectedIndices[0] = FindSearchDirectionContact(collision, selected);
+    selected[selectedIndices[0]] = true;
+
+    selectedIndices[1] = FindFarthestContact(collision, selected, selectedIndices[0]);
+    selected[selectedIndices[1]] = true;
+
+    Eigen::Vector3f localNormal =
+        bodyA->transform.GetRotation().toRotationMatrix().transpose() *
+        collision.contactPoints[selectedIndices[0]].normal;
+    if (localNormal.squaredNorm() <= 1e-12f)
+        localNormal = Eigen::Vector3f::UnitY();
+    else
+        localNormal.normalize();
+
+    float thirdArea = 0.0f;
+    selectedIndices[2] = FindLargestAreaContact(collision, selected,
+                                                selectedIndices[0], selectedIndices[1],
+                                                localNormal, thirdArea);
+    selected[selectedIndices[2]] = true;
+
+    selectedIndices[3] = FindOppositeAreaContact(collision, selected, selectedIndices,
+                                                 localNormal, thirdArea >= 0.0f);
+
+    ContactPoint reducedContacts[MAX_SOLVER_MANIFOLD_CONTACTS];
+    for (int i = 0; i < MAX_SOLVER_MANIFOLD_CONTACTS; ++i)
+        reducedContacts[i] = collision.contactPoints[selectedIndices[i]];
+
+    for (int i = 0; i < MAX_SOLVER_MANIFOLD_CONTACTS; ++i)
+        collision.contactPoints[i] = reducedContacts[i];
+
+    collision.numContacts = MAX_SOLVER_MANIFOLD_CONTACTS;
 }
 
 //================================//
@@ -46,10 +297,12 @@ bool Manifold::Initialize()
 
     // ---- Save old state for warmstarting ----
     int oldNumContacts = numContactPoints;
-    ContactPoint        oldContacts[8];
-    ManifoldContactInfo oldInfo[8];
-    float               oldPenalty[24];
-    float               oldLambda[24];
+    ContactPoint        oldContacts[MAX_CONTACT_POINTS];
+    ManifoldContactInfo oldInfo[MAX_CONTACT_POINTS];
+    float               oldPenalty[NUM_CONSTRAINTS];
+    float               oldLambda[NUM_CONSTRAINTS];
+    bool                oldContactUsed[MAX_CONTACT_POINTS] = {};
+    bool                contactWasMatched[MAX_CONTACT_POINTS] = {};
 
     for (int i = 0; i < oldNumContacts; i++)
     {
@@ -63,7 +316,17 @@ bool Manifold::Initialize()
     }
 
     // Collision detection
-    CollisionResult collision = CollisionSpace::CollisionMeshMesh(bodyA, bodyB);
+    CollisionResult collision;
+    if (IsConvexPolyhedronMesh(bodyA) && IsConvexPolyhedronMesh(bodyB))
+    {
+        collision = CollisionSpace::CollideHullHullSAT(bodyA, bodyB, &convexSATCache);
+    }
+    else
+    {
+        convexSATCache = ConvexSATCache{};
+        collision = CollisionSpace::CollisionMeshMesh(bodyA, bodyB);
+    }
+    ReduceCollisionContacts(bodyA, collision);
     numContactPoints = collision.numContacts;
     if (numContactPoints == 0)
         return false;
@@ -83,36 +346,54 @@ bool Manifold::Initialize()
     // Matching
     for (int i = 0; i < numContactPoints; i++)
     {
-        uint32_t id = contactPoints[i].id;
+        int matchingContactIndex = -1;
+        float bestMatchDistance = std::numeric_limits<float>::max();
+
         for (int j = 0; j < oldNumContacts; j++)
         {
-            if (oldContacts[j].id == id)
-            {
-                // Restore accumulated solver state
-                for (int k = 0; k < 3; k++)
-                {
-                    constraintPoints[i * 3 + k].penalty = oldPenalty[j * 3 + k];
-                    constraintPoints[i * 3 + k].lambda  = oldLambda[j * 3 + k];
-                }
-                contactInfos[i].stick = oldInfo[j].stick;
+            if (oldContactUsed[j])
+                continue;
 
-                // If sticking, reuse old local offsets for stable static friction
-                const bool sameAnchors =
-                    (oldContacts[j].rA - contactPoints[i].rA).squaredNorm() <= 1e-10f &&
-                    (oldContacts[j].rB - contactPoints[i].rB).squaredNorm() <= 1e-10f;
-                if (contactPoints[i].penetration <= COLLISION_MARGIN)
-                {
-                    for (int k = 0; k < 3; ++k)
-                        constraintPoints[i * 3 + k].lambda = 0.0f;
-                    contactInfos[i].stick = false;
-                }
-                else if (contactInfos[i].stick && sameAnchors)
-                {
-                    contactPoints[i].rA = oldContacts[j].rA;
-                    contactPoints[i].rB = oldContacts[j].rB;
-                }
-                break;
+            const bool similarNormal = oldContacts[j].normal.dot(contactPoints[i].normal) >= CONTACT_MATCH_NORMAL_DOT;
+            const float localDistanceSquared = (oldContacts[j].rA - contactPoints[i].rA).squaredNorm();
+            const bool similarAnchor = localDistanceSquared <= CONTACT_MATCH_DISTANCE_SQUARED;
+
+            if (similarNormal && similarAnchor && localDistanceSquared < bestMatchDistance)
+            {
+                bestMatchDistance = localDistanceSquared;
+                matchingContactIndex = j;
             }
+        }
+
+        if (matchingContactIndex < 0)
+            continue;
+
+        oldContactUsed[matchingContactIndex] = true;
+        contactWasMatched[i] = true;
+
+        for (int k = 0; k < 3; k++)
+        {
+            constraintPoints[i * 3 + k].penalty = oldPenalty[matchingContactIndex * 3 + k];
+            constraintPoints[i * 3 + k].lambda  = oldLambda[matchingContactIndex * 3 + k];
+        }
+        contactInfos[i].stick = oldInfo[matchingContactIndex].stick;
+
+        // If sticking, reuse old local offsets for stable static friction
+        const bool nearbyAnchors =
+            (oldContacts[matchingContactIndex].rA - contactPoints[i].rA).squaredNorm() <=
+            CONTACT_MATCH_DISTANCE_SQUARED &&
+            (oldContacts[matchingContactIndex].rB - contactPoints[i].rB).squaredNorm() <=
+            CONTACT_MATCH_DISTANCE_SQUARED;
+        if (contactPoints[i].penetration <= COLLISION_MARGIN)
+        {
+            for (int k = 0; k < 3; ++k)
+                constraintPoints[i * 3 + k].lambda = 0.0f;
+            contactInfos[i].stick = false;
+        }
+        else if (contactInfos[i].stick && nearbyAnchors)
+        {
+            contactPoints[i].rA = oldContacts[matchingContactIndex].rA;
+            contactPoints[i].rB = oldContacts[matchingContactIndex].rB;
         }
     }
 
@@ -175,6 +456,8 @@ bool Manifold::Initialize()
         contactInfos[i].JacTang2B.tail<3>() = -(rBw.cross(t2));
 
         // ---- C0: constraint gap at start of step ----
+        // The normal row uses narrowphase penetration below. The local anchor
+        // displacement is still needed for both tangential rows.
         //
         //  2D:  C0 = basis * (worldA - worldB) + [margin, 0]
         //  3D:  C0 = [n · rDiff, t1 · rDiff, t2 · rDiff] + [margin, 0, 0]
@@ -187,24 +470,16 @@ bool Manifold::Initialize()
         Eigen::Vector3f worldB = posB + rBw;
         Eigen::Vector3f rDiff  = worldA - worldB;
 
-        contactInfos[i].C0[0] = n.dot(rDiff)  + COLLISION_MARGIN;
+        contactInfos[i].C0[0] = COLLISION_MARGIN - contactPoints[i].penetration;
         contactInfos[i].C0[1] = t1.dot(rDiff);
         contactInfos[i].C0[2] = t2.dot(rDiff);
 
-        // Better penalty init
-        bool isNew = true;
-        for (int j = 0; j < oldNumContacts; j++)
+        if (!contactWasMatched[i])
         {
-            if (oldContacts[j].id == contactPoints[i].id) { isNew = false; break; }
-        }
-
-        if (isNew)
-        {
-            float depth = contactPoints[i].penetration;
-            float seedPenalty = std::clamp(depth * solver->onPenetrationPenalty, PENALTY_MIN, 100000.0f);
-            constraintPoints[i * 3 + 0].penalty = seedPenalty;  // normal
-            constraintPoints[i * 3 + 1].penalty = PENALTY_MIN;  // tangent1
-            constraintPoints[i * 3 + 2].penalty = PENALTY_MIN;  // tangent2
+            constraintPoints[i * 3 + 0].penalty =
+                GetNewNormalContactPenalty(solver, contactInfos[i].C0[0]);
+            constraintPoints[i * 3 + 1].penalty = PENALTY_MIN;
+            constraintPoints[i * 3 + 2].penalty = PENALTY_MIN;
         }
     }
 

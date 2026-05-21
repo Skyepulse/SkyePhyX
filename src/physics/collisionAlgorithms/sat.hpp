@@ -16,7 +16,7 @@ namespace CollisionSpace
     //================================//
     CollisionResult CollideSphereHullSAT(const Mesh* meshA, const Mesh* meshB);
     CollisionResult CollideHullCapsuleSAT(const Mesh* meshA, const Mesh* meshB);
-    CollisionResult CollideHullHullSAT(const Mesh* meshA, const Mesh* meshB);
+    CollisionResult CollideHullHullSAT(const Mesh* meshA, const Mesh* meshB, ConvexSATCache* cache = nullptr);
 }
 
 #endif // COLLISION_SAT_HPP

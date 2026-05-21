@@ -130,11 +130,10 @@ public:
     // Changing Parameters
     bool postStabilization = false;
     //int numSubsteps = 4;
-    int numIterations = 10;
+    int numIterations = 20;
     float alpha = 0.95f;
     float beta = 100'000.0f;
     float gamma = 0.99f;
-    float onPenetrationPenalty = 0.f;
     float stepValue = 1.0f / 60.0f;
 
     EigenProjectionMode projectionMode = EigenProjectionMode::ABSOLUTE;
