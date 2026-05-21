@@ -753,6 +753,48 @@ static void TestConvexMeshShowcase(Solver* solver, Camera* camera, const LevelPa
 
     const float groundTop = -9.5f;
 
+    // The test hull has flat y-facing support faces. Alternate it upright and
+    // upside-down while changing yaw so each contact in this tower stays face-on.
+    const int convexStackCount = 8;
+    const Eigen::Vector3f convexStackScale(1.15f, 1.15f, 1.15f);
+    const Eigen::Vector3f convexStackBase(-4.8f, groundTop + 0.5f * convexStackScale.y(), 4.2f);
+    const float convexStackYaw[convexStackCount] =
+    {
+        -24.0f, 12.0f, -8.0f, 28.0f,
+        -18.0f, 18.0f, -30.0f, 6.0f
+    };
+    const float convexStackRoll[convexStackCount] =
+    {
+        0.0f, 180.0f, 0.0f, 180.0f,
+        0.0f, 180.0f, 0.0f, 180.0f
+    };
+    const Eigen::Vector3f convexStackColors[convexStackCount] =
+    {
+        Eigen::Vector3f(0.24f, 0.64f, 0.84f),
+        Eigen::Vector3f(0.92f, 0.58f, 0.24f),
+        Eigen::Vector3f(0.34f, 0.78f, 0.48f),
+        Eigen::Vector3f(0.86f, 0.34f, 0.42f),
+        Eigen::Vector3f(0.44f, 0.48f, 0.88f),
+        Eigen::Vector3f(0.88f, 0.78f, 0.28f),
+        Eigen::Vector3f(0.30f, 0.72f, 0.70f),
+        Eigen::Vector3f(0.78f, 0.38f, 0.74f)
+    };
+
+    for (int i = 0; i < convexStackCount; ++i)
+    {
+        Mesh* stackHull = solver->AddBody(
+            ModelType_TestConvexMesh, 1.0f, 0.85f,
+            convexStackBase + Eigen::Vector3f(0.0f, i * convexStackScale.y(), 0.0f),
+            convexStackScale,
+            Eigen::Vector3f::Zero(),
+            makeRotation(0.0f, convexStackYaw[i], convexStackRoll[i]),
+            Eigen::Vector3f::Zero(),
+            false,
+            convexStackColors[i]
+        );
+        stackHull->name = "ConvexStack_" + std::to_string(i);
+    }
+
     Mesh* leftBox = solver->AddBody(
         ModelType_Cube, 1.0f, 0.6f,
         Eigen::Vector3f(-10.0f, groundTop + 1.1f, 0.0f),

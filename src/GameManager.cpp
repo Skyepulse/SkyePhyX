@@ -11,6 +11,74 @@
 #endif
 
 //================================//
+static bool GetMouseRay(Camera* camera, GLFWwindow* window, uint32_t width, uint32_t height, float screenX, float screenY, Eigen::Vector3f& outOrigin, Eigen::Vector3f& outDirection)
+{
+    if (width == 0 || height == 0)
+        return false;
+
+    int windowWidth = 0;
+    int windowHeight = 0;
+    glfwGetWindowSize(window, &windowWidth, &windowHeight);
+    if (windowWidth > 0 && windowHeight > 0)
+    {
+        screenX *= static_cast<float>(width) / static_cast<float>(windowWidth);
+        screenY *= static_cast<float>(height) / static_cast<float>(windowHeight);
+    }
+
+    Eigen::Matrix4f view, projection;
+    camera->GetViewMatrix(view);
+    camera->GetProjectionMatrix(projection);
+
+    const Eigen::Matrix4f invViewProjection = (projection * view).inverse();
+    const float ndcX = 2.0f * screenX / static_cast<float>(width) - 1.0f;
+    const float ndcY = 1.0f - 2.0f * screenY / static_cast<float>(height);
+
+    Eigen::Vector4f nearPoint = invViewProjection * Eigen::Vector4f(ndcX, ndcY, 0.0f, 1.0f);
+    Eigen::Vector4f farPoint = invViewProjection * Eigen::Vector4f(ndcX, ndcY, 1.0f, 1.0f);
+    if (std::abs(nearPoint.w()) <= 1e-6f || std::abs(farPoint.w()) <= 1e-6f)
+        return false;
+
+    nearPoint /= nearPoint.w();
+    farPoint /= farPoint.w();
+
+    outOrigin = nearPoint.head<3>();
+    outDirection = (farPoint.head<3>() - outOrigin).normalized();
+    return outDirection.allFinite();
+}
+
+//================================//
+static bool RaycastConvexHull(const ConvexHull& hull, const Eigen::Vector3f& origin, const Eigen::Vector3f& direction, float& outDistance)
+{
+    float enter = 0.0f;
+    float exit = std::numeric_limits<float>::infinity();
+
+    for (const HullFace& face : hull.faces)
+    {
+        const float distance = face.normal.dot(origin) - face.planeOffset;
+        const float denom = face.normal.dot(direction);
+
+        if (std::abs(denom) <= 1e-6f)
+        {
+            if (distance > 0.0f)
+                return false;
+            continue;
+        }
+
+        const float t = -distance / denom;
+        if (denom < 0.0f)
+            enter = std::max(enter, t);
+        else
+            exit = std::min(exit, t);
+
+        if (enter > exit)
+            return false;
+    }
+
+    outDistance = enter;
+    return outDistance >= 0.0f;
+}
+
+//================================//
 GameManager::GameManager(): window(nullptr, &glfwDestroyWindow)
 {
     if (!glfwInit())
@@ -210,40 +278,51 @@ void GameManager::ProcessEvents(float deltaTime)
 
     if (leftMousePressed)
     {
-        this->objectPicker.screenX = static_cast<float>(mouseX);
-        this->objectPicker.screenY = static_cast<float>(mouseY);
-
-        if (!this->lMouseClicked && !mouseCapturedByUi)
+        if (this->pickMeshes)
         {
-            this->objectPicker.active = RaycastFromMouse(
-                static_cast<float>(mouseX),
-                static_cast<float>(mouseY),
-                this->objectPicker.localHitPoint,
-                this->objectPicker.pickedMesh,
-                this->objectPicker.hitDistance
-            );
+            this->objectPicker.screenX = static_cast<float>(mouseX);
+            this->objectPicker.screenY = static_cast<float>(mouseY);
 
-            if (this->objectPicker.active)
+            if (!this->lMouseClicked && !mouseCapturedByUi)
             {
-                Eigen::Vector3f target = ProjectMouseToPickDepth(static_cast<float>(mouseX), static_cast<float>(mouseY), this->objectPicker.hitDistance);
-                Vector6f stiffness = Vector6f::Zero();
-                stiffness.head<3>().setConstant(8000.0f);
-                this->objectPicker.mouseJoint = static_cast<Joint*>(this->solver->AddForce(std::make_unique<Joint>(
-                    this->solver.get(),
-                    nullptr,
-                    target,
-                    this->objectPicker.pickedMesh,
+                this->objectPicker.active = RaycastFromMouse(
+                    static_cast<float>(mouseX),
+                    static_cast<float>(mouseY),
                     this->objectPicker.localHitPoint,
-                    stiffness
-                )));
-                for (int i = 0; i < 3; ++i)
-                    this->objectPicker.mouseJoint->constraintPoints[i].penalty = stiffness[i];
+                    this->objectPicker.pickedMesh,
+                    this->objectPicker.hitDistance
+                );
+
+                if (this->objectPicker.active)
+                {
+                    Eigen::Vector3f target = ProjectMouseToPickDepth(static_cast<float>(mouseX), static_cast<float>(mouseY), this->objectPicker.hitDistance);
+                    Vector6f stiffness = Vector6f::Zero();
+                    stiffness.head<3>().setConstant(8000.0f);
+                    this->objectPicker.mouseJoint = static_cast<Joint*>(this->solver->AddForce(std::make_unique<Joint>(
+                        this->solver.get(),
+                        nullptr,
+                        target,
+                        this->objectPicker.pickedMesh,
+                        this->objectPicker.localHitPoint,
+                        stiffness
+                    )));
+                    for (int i = 0; i < 3; ++i)
+                        this->objectPicker.mouseJoint->constraintPoints[i].penalty = stiffness[i];
+                }
+            }
+
+            if (this->objectPicker.active && this->objectPicker.mouseJoint)
+            {
+                this->objectPicker.mouseJoint->rA = ProjectMouseToPickDepth(static_cast<float>(mouseX), static_cast<float>(mouseY), this->objectPicker.hitDistance);
             }
         }
 
-        if (this->objectPicker.active && this->objectPicker.mouseJoint)
+        else if (this->shootSpheres)
         {
-            this->objectPicker.mouseJoint->rA = ProjectMouseToPickDepth(static_cast<float>(mouseX), static_cast<float>(mouseY), this->objectPicker.hitDistance);
+            if (!this->lMouseClicked && !mouseCapturedByUi)
+            {
+                SpawnShootingSphere(mouseX, mouseY);
+            }
         }
 
         this->lMouseClicked = true;
@@ -297,13 +376,8 @@ void GameManager::ProcessEvents(float deltaTime)
 
     bool randomBoxSpawnedKeyPressed = glfwGetKey(this->window.get(), GLFW_KEY_B) == GLFW_PRESS;
     if (randomBoxSpawnedKeyPressed && !this->randomBoxSpawnedPressed)
-        this->SpawnRandomBox();
+        this->SpawnRandomMesh();
     this->randomBoxSpawnedPressed = randomBoxSpawnedKeyPressed;
-
-    bool shootBallKeyPressed = glfwGetKey(this->window.get(), GLFW_KEY_SPACE) == GLFW_PRESS;
-    if (shootBallKeyPressed && !this->shootBallPressed)
-        this->SpawnShootingSphere();
-    this->shootBallPressed = shootBallKeyPressed;
 }
 
 //================================//
@@ -359,9 +433,20 @@ void GameManager::ChangeLevel(int levelIndex)
 }
 
 //================================//
-void GameManager::SpawnRandomBox()
+void GameManager::SpawnRandomMesh()
 {
     int numBodies = static_cast<int>(this->solver->bodyPtrs.size());
+
+    ModelType modelType;
+    float choseModel = rand01();
+    if (choseModel < 0.25f)
+        modelType = ModelType_Cube;
+    else if (choseModel < 0.5f)
+        modelType = ModelType_Sphere;
+    else if (choseModel < 0.75f)
+        modelType = ModelType_Capsule;
+    else
+        modelType = ModelType_TestConvexMesh;
 
     float maxScalePerAxis = 3.f;
     float minScalePerAxis = 1.f;
@@ -376,6 +461,11 @@ void GameManager::SpawnRandomBox()
     if (randomScaleZ < minScalePerAxis) randomScaleZ = minScalePerAxis;
 
     Eigen::Vector3f randomScale = Eigen::Vector3f(randomScaleX, randomScaleY, randomScaleZ);
+    if (modelType == ModelType_Capsule || modelType == ModelType_Sphere)
+    {
+        float maxUniformScale = std::min({ randomScaleX, randomScaleY, randomScaleZ });
+        randomScale = Eigen::Vector3f(maxUniformScale, maxUniformScale, maxUniformScale);
+    }
 
     float minBounds[3] = { -10.f, 3.f, -10.f };
     float maxBounds[3] = { 10.f, 10.f, 10.f };
@@ -386,12 +476,12 @@ void GameManager::SpawnRandomBox()
 
     Eigen::Vector3f randomColor = Eigen::Vector3f(rand01(), rand01(), rand01());
 
-    Mesh* mesh = this->solver->AddBody(ModelType_Cube, 1.0f, 0.5f, randomPos, randomScale, Eigen::Vector3f(0.0f, 0.0f, 0.0f), randomRotation, Eigen::Vector3f(0.0f, 0.0f, 0.0f), false, randomColor);
-    mesh->name = "Random Box " + std::to_string(numBodies);
+    Mesh* mesh = this->solver->AddBody(modelType, 1.0f, 0.6f, randomPos, randomScale, Eigen::Vector3f(0.0f, 0.0f, 0.0f), randomRotation, Eigen::Vector3f(0.0f, 0.0f, 0.0f), false, randomColor);
+    mesh->name = "Random " + std::to_string(modelType) + " " + std::to_string(numBodies);
 }
 
 //================================//
-void GameManager::SpawnShootingSphere()
+void GameManager::SpawnShootingSphere(float mouseX, float mouseY)
 {
     int numBodies = static_cast<int>(this->solver->bodyPtrs.size());
 
@@ -399,7 +489,13 @@ void GameManager::SpawnShootingSphere()
 
     float sphereRadius = 1.0f;
 
-    Eigen::Vector3f shootingDirection = this->renderEngine->GetCamera()->GetForwardDirection();
+    // Shoot in direction of mouseX mouseY as if it was a ray from center to a plane 1m in front of the camera
+    Eigen::Vector3f rayOrigin, rayDirection;
+    WindowFormat currentFormat = this->wgpuBundle->GetWindowFormat();
+    if (!GetMouseRay(this->renderEngine->GetCamera(), this->window.get(), static_cast<uint32_t>(currentFormat.width), static_cast<uint32_t>(currentFormat.height), static_cast<float>(mouseX), static_cast<float>(mouseY), rayOrigin, rayDirection))
+        rayDirection = this->renderEngine->GetCamera()->GetForwardDirection();
+    
+    Eigen::Vector3f shootingDirection = rayDirection.normalized();
 
     float shootSpeed = 50.0f;
     Eigen::Vector3f smallUpDrift = Eigen::Vector3f(0.0f, 0.1f, 0.0f);
@@ -409,74 +505,6 @@ void GameManager::SpawnShootingSphere()
 
     Mesh* mesh = this->solver->AddBody(ModelType_Sphere, 1.0f, 0.5f, spawnPos, Eigen::Vector3f(sphereRadius, sphereRadius, sphereRadius), initialVelocity, Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false, randomColor);
     mesh->name = "Shooting Sphere " + std::to_string(numBodies);
-}
-
-//================================//
-static bool GetMouseRay(Camera* camera, GLFWwindow* window, uint32_t width, uint32_t height, float screenX, float screenY, Eigen::Vector3f& outOrigin, Eigen::Vector3f& outDirection)
-{
-    if (width == 0 || height == 0)
-        return false;
-
-    int windowWidth = 0;
-    int windowHeight = 0;
-    glfwGetWindowSize(window, &windowWidth, &windowHeight);
-    if (windowWidth > 0 && windowHeight > 0)
-    {
-        screenX *= static_cast<float>(width) / static_cast<float>(windowWidth);
-        screenY *= static_cast<float>(height) / static_cast<float>(windowHeight);
-    }
-
-    Eigen::Matrix4f view, projection;
-    camera->GetViewMatrix(view);
-    camera->GetProjectionMatrix(projection);
-
-    const Eigen::Matrix4f invViewProjection = (projection * view).inverse();
-    const float ndcX = 2.0f * screenX / static_cast<float>(width) - 1.0f;
-    const float ndcY = 1.0f - 2.0f * screenY / static_cast<float>(height);
-
-    Eigen::Vector4f nearPoint = invViewProjection * Eigen::Vector4f(ndcX, ndcY, 0.0f, 1.0f);
-    Eigen::Vector4f farPoint = invViewProjection * Eigen::Vector4f(ndcX, ndcY, 1.0f, 1.0f);
-    if (std::abs(nearPoint.w()) <= 1e-6f || std::abs(farPoint.w()) <= 1e-6f)
-        return false;
-
-    nearPoint /= nearPoint.w();
-    farPoint /= farPoint.w();
-
-    outOrigin = nearPoint.head<3>();
-    outDirection = (farPoint.head<3>() - outOrigin).normalized();
-    return outDirection.allFinite();
-}
-
-//================================//
-static bool RaycastConvexHull(const ConvexHull& hull, const Eigen::Vector3f& origin, const Eigen::Vector3f& direction, float& outDistance)
-{
-    float enter = 0.0f;
-    float exit = std::numeric_limits<float>::infinity();
-
-    for (const HullFace& face : hull.faces)
-    {
-        const float distance = face.normal.dot(origin) - face.planeOffset;
-        const float denom = face.normal.dot(direction);
-
-        if (std::abs(denom) <= 1e-6f)
-        {
-            if (distance > 0.0f)
-                return false;
-            continue;
-        }
-
-        const float t = -distance / denom;
-        if (denom < 0.0f)
-            enter = std::max(enter, t);
-        else
-            exit = std::min(exit, t);
-
-        if (enter > exit)
-            return false;
-    }
-
-    outDistance = enter;
-    return outDistance >= 0.0f;
 }
 
 //================================//

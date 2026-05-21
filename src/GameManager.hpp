@@ -40,8 +40,13 @@ public:
 
     void ChangeLevel(int levelIndex);
     int GetCurrentLevel() const { return this->currentLevel; }
+    void NextStep() { this->nextPass = true; }
     
     LevelParameters levelParameters = { 8000.0f, 0.3f, 1.0f };
+
+    bool paused = false;
+    bool shootSpheres = false;
+    bool pickMeshes = true;
 
 private:
     std::unique_ptr<RenderEngine> renderEngine;
@@ -62,7 +67,6 @@ private:
     bool rMouseClicked = false;
     bool lMouseClicked = false;
 
-    bool paused = false;
     bool pKeyWasPressed = false;
 
     bool nextPass = false;
@@ -71,7 +75,6 @@ private:
     bool restartKeyWasPressed = false;
 
     bool randomBoxSpawnedPressed = false;
-    bool shootBallPressed = false;
     bool mainLoopStarted = false;
     float physicsAccumulator = 0.0f;
 
@@ -82,8 +85,8 @@ private:
     void TickFrame();
 
     //================================//
-    void SpawnRandomBox();
-    void SpawnShootingSphere();
+    void SpawnRandomMesh();
+    void SpawnShootingSphere(float mouseX = 0.0f, float mouseY = 0.0f);
     void ReleaseObjectPicker();
     Eigen::Vector3f ProjectMouseToPickDepth(float screenX, float screenY, float depth);
     bool RaycastFromMouse(float screenX, float screenY, Eigen::Vector3f& outHitPoint, Mesh*& outHitMesh, float& outHitDistance);

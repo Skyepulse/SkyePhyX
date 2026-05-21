@@ -150,7 +150,31 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
         ImGui::EndCombo();
     }
 
-    ImGui::Text("Level Parameters");
+    int interactionMode = this->gameManager->shootSpheres ? 0 : 1;
+
+    if (ImGui::RadioButton("Shoot Spheres", interactionMode == 0))
+    {
+        this->gameManager->shootSpheres = true;
+        this->gameManager->pickMeshes = false;
+    }
+
+    if (ImGui::RadioButton("Pick Meshes", interactionMode == 1))
+    {
+        this->gameManager->shootSpheres = false;
+        this->gameManager->pickMeshes = true;
+    }
+
+    ImGui::Spacing();
+    ImGui::Checkbox("Pause Simulation", &this->gameManager->paused);
+    if (this->gameManager->paused)
+    {
+        if (ImGui::Button("Next Step"))
+        {
+            this->gameManager->NextStep();
+        }
+    }
+
+    ImGui::Text("Level Soft Body Parameters");
     ImGui::SliderFloat("Young's Modulus", &this->gameManager->levelParameters.E, 500.0f, 100'000.0f, "%.1f");
     ImGui::SliderFloat("Poisson's Ratio", &this->gameManager->levelParameters.nu, 0.01f, 0.49f, "%.2f");
     ImGui::SliderFloat("Particle mass", &this->gameManager->levelParameters.particleMass, 0.01f, 5.0f, "%.2f");
