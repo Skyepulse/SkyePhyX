@@ -231,7 +231,7 @@ void Solver::RemoveBody(Mesh* body)
 Mesh* Solver::AddParticle(float mass, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& velocity, bool isStatic, const Eigen::Vector3f& color)
 {
     Eigen::Vector3f scale(0.1f, 0.1f, 0.1f);
-    Mesh* particle = AddBody(ModelType_Sphere, mass / (scale.x() * scale.y() * scale.z()), friction, position, scale, velocity, Quaternionf::Identity(), Eigen::Vector3f::Zero(), isStatic, color);
+    Mesh* particle = AddBody(ModelType_Cube, mass / (scale.x() * scale.y() * scale.z()), friction, position, scale, velocity, Quaternionf::Identity(), Eigen::Vector3f::Zero(), isStatic, color);
     particle->isParticle = true;
 
     // Zero out inertia and every rotation related properties since it's a particle
@@ -275,6 +275,7 @@ Energy* Solver::AddEnergy(std::unique_ptr<Energy> energy)
     Energy* raw = energy.get();
     raw->solverIndex = static_cast<int>(solverEnergies.size());
     solverEnergies.push_back(std::move(energy));
+    surfaceDirty = true;
     return raw;
 }
 
@@ -291,6 +292,7 @@ void Solver::RemoveEnergy(Energy* energy)
         solverEnergies[idx]->solverIndex = idx;
     }
     solverEnergies.pop_back();
+    surfaceDirty = true;
 }
 
 //================================//

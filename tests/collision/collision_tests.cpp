@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -790,4 +791,33 @@ TEST(CollisionManifold, ShallowPersistentContactsKeepFrictionWarmStart)
     EXPECT_FLOAT_EQ(manifold.constraintPoints[2].penalty, 14.0f);
     EXPECT_FLOAT_EQ(manifold.constraintPoints[2].lambda, -0.3f);
     EXPECT_TRUE(manifold.contactInfos[0].stick);
+}
+
+//================================//
+TEST(SoftBodySurface, RebuildsAfterVertexBodyRemoval)
+{
+    Solver solver;
+    Mesh* v0 = solver.AddParticle(1.0f, 0.5f, Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+                                  Eigen::Vector3f::Zero(), true);
+    Mesh* v1 = solver.AddParticle(1.0f, 0.5f, Eigen::Vector3f(1.0f, 0.0f, 0.0f),
+                                  Eigen::Vector3f::Zero(), true);
+    Mesh* v2 = solver.AddParticle(1.0f, 0.5f, Eigen::Vector3f(0.0f, 1.0f, 0.0f),
+                                  Eigen::Vector3f::Zero(), true);
+    Mesh* v3 = solver.AddParticle(1.0f, 0.5f, Eigen::Vector3f(0.0f, 0.0f, 1.0f),
+                                  Eigen::Vector3f::Zero(), true);
+
+    solver.AddEnergy(std::make_unique<NeoHookeanFEM>(&solver, v0, v1, v2, v3, 200.0f, 0.25f));
+    solver.Step();
+
+    ASSERT_EQ(solver.surfaceFaces.size(), 4u);
+    ASSERT_EQ(solver.softBodySurfaceData.size(), 12u);
+
+    solver.RemoveBody(v0);
+
+    EXPECT_TRUE(solver.surfaceDirty);
+
+    solver.Step();
+
+    EXPECT_TRUE(solver.surfaceFaces.empty());
+    EXPECT_TRUE(solver.softBodySurfaceData.empty());
 }
