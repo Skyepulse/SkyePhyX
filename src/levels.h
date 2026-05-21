@@ -127,13 +127,13 @@ static void FrictionSlope(Solver* solver, Camera* camera, const LevelParameters&
                                Eigen::AngleAxisf(rotationPerAxis.y() * M_PI / 180.0f, Eigen::Vector3f::UnitY()) *
                                Eigen::AngleAxisf(rotationPerAxis.z() * M_PI / 180.0f, Eigen::Vector3f::UnitZ());
 
-    Mesh* ground = solver->AddBody(ModelType_Cube, 1.0f, 0.5f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(35.0f, 1.0f, 10.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), slopeRotation, Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
+    Mesh* ground = solver->AddBody(ModelType_Cube, 1.0f, 1.0f, Eigen::Vector3f(0.0f, -10.0f, 0.0f), Eigen::Vector3f(35.0f, 1.0f, 10.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f), slopeRotation, Eigen::Vector3f(0.0f, 0.0f, 0.0f), true);
     ground->name = "Slope";
 
     // N blocks, from left to right inclined like the slope, with increasing friction
     int numBlocks = 10;
     float startFriction = 0.0f;
-    float endFriction = 0.95f;
+    float endFriction = 1.0f;
 
     float heightOffset = 1.f;
 
@@ -1101,9 +1101,9 @@ static void Capsules(Solver* solver, Camera* camera, const LevelParameters& para
     for (int i = 0; i < pileNum; ++i)
     {
         Mesh* pile = solver->AddBody(
-            ModelType_Cube, 0.2f, 0.7f,
+            ModelType_Cube, 0.1f, 0.6f,
             pileStart + Eigen::Vector3f(0.0f, i * pileSpacing, 0.0f),
-            Eigen::Vector3f(2.0f, 2.0f, 2.0f),
+            Eigen::Vector3f(1.0f, 1.0f, 1.0f),
             Eigen::Vector3f::Zero(),
             makeRotation(90.0f, 0.0f, 0.0f),
             Eigen::Vector3f::Zero(),

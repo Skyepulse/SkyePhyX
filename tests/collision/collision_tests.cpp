@@ -752,3 +752,42 @@ TEST(CollisionManifold, CapsuleContactsStartWithNormalSupport)
         }
     }
 }
+
+//================================//
+TEST(CollisionManifold, ShallowPersistentContactsKeepFrictionWarmStart)
+{
+    Solver solver;
+    const float penetration = 0.5f * COLLISION_MARGIN;
+    Mesh* sphereA = solver.AddBody(ModelType_Sphere, 1.0f, 1.0f,
+                                   Eigen::Vector3f::Zero(), Eigen::Vector3f::Ones(),
+                                   Eigen::Vector3f::Zero(), Quaternionf::Identity(),
+                                   Eigen::Vector3f::Zero(), false);
+    Mesh* sphereB = solver.AddBody(ModelType_Sphere, 1.0f, 1.0f,
+                                   Eigen::Vector3f(1.0f - penetration, 0.0f, 0.0f), Eigen::Vector3f::Ones(),
+                                   Eigen::Vector3f::Zero(), Quaternionf::Identity(),
+                                   Eigen::Vector3f::Zero(), false);
+
+    Manifold manifold(&solver, sphereA, sphereB);
+    ASSERT_TRUE(manifold.Initialize());
+    ASSERT_EQ(manifold.numContactPoints, 1);
+    EXPECT_LT(manifold.contactPoints[0].penetration, COLLISION_MARGIN);
+
+    manifold.constraintPoints[0].penalty = 25.0f;
+    manifold.constraintPoints[0].lambda = -3.0f;
+    manifold.constraintPoints[1].penalty = 12.0f;
+    manifold.constraintPoints[1].lambda = 0.4f;
+    manifold.constraintPoints[2].penalty = 14.0f;
+    manifold.constraintPoints[2].lambda = -0.3f;
+    manifold.contactInfos[0].stick = true;
+
+    ASSERT_TRUE(manifold.Initialize());
+    ASSERT_EQ(manifold.numContactPoints, 1);
+
+    EXPECT_FLOAT_EQ(manifold.constraintPoints[0].penalty, 25.0f);
+    EXPECT_FLOAT_EQ(manifold.constraintPoints[0].lambda, -3.0f);
+    EXPECT_FLOAT_EQ(manifold.constraintPoints[1].penalty, 12.0f);
+    EXPECT_FLOAT_EQ(manifold.constraintPoints[1].lambda, 0.4f);
+    EXPECT_FLOAT_EQ(manifold.constraintPoints[2].penalty, 14.0f);
+    EXPECT_FLOAT_EQ(manifold.constraintPoints[2].lambda, -0.3f);
+    EXPECT_TRUE(manifold.contactInfos[0].stick);
+}

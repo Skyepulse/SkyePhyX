@@ -134,7 +134,7 @@ struct RenderVisibility
     bool showMeshes = true;
     bool showConvexHulls = false;
     bool showForceLines = true;
-    bool showDebugPoints = true;
+    bool showDebugPoints = false;
     bool showSoftBodySurface = true;
     bool showBodyGraphColors = false;
 };

@@ -384,13 +384,8 @@ bool Manifold::Initialize()
             CONTACT_MATCH_DISTANCE_SQUARED &&
             (oldContacts[matchingContactIndex].rB - contactPoints[i].rB).squaredNorm() <=
             CONTACT_MATCH_DISTANCE_SQUARED;
-        if (contactPoints[i].penetration <= COLLISION_MARGIN)
-        {
-            for (int k = 0; k < 3; ++k)
-                constraintPoints[i * 3 + k].lambda = 0.0f;
-            contactInfos[i].stick = false;
-        }
-        else if (contactInfos[i].stick && nearbyAnchors)
+
+        if (contactInfos[i].stick && nearbyAnchors)
         {
             contactPoints[i].rA = oldContacts[matchingContactIndex].rA;
             contactPoints[i].rB = oldContacts[matchingContactIndex].rB;
