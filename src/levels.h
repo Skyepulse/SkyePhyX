@@ -442,9 +442,9 @@ static void SoftSpheres(Solver* solver, Camera* camera, const LevelParameters& p
 //================================//
 static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameters& params)
 {
-    const int   N       = 10;
-    const int   M       = 15;
-    const float spacing = 1.5f;
+    const int   N       = 20;
+    const int   M       = 40;
+    const float spacing = 0.5f;
     const float startX  = -(N - 1) * spacing * 0.5f;
     const float startY  = 5.f;
 
@@ -464,6 +464,7 @@ static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameter
             );
             p->isParticle = true;
             p->name = "Cloth_" + std::to_string(i) + "_" + std::to_string(j);
+            p->isInvisible = true;
             parts[i + j * N] = p;
         }
     }
@@ -486,6 +487,16 @@ static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameter
             solver->AddEnergy(std::make_unique<STVKFEM>(solver, v00, v11, v01, params.E, params.nu));
         }
     }
+
+    // Big static sphere to interact with cloth
+    Mesh* staticSphere = solver->AddBody(
+        ModelType_Sphere, 1.0f, 0.5f,
+        Eigen::Vector3f(0.f, startY - 4.f, startZ + (M - 1) * spacing * 0.5f), Eigen::Vector3f(5.f, 5.f, 5.f),
+        Eigen::Vector3f(0.0f, 0.0f, 0.0f), Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+        true, Eigen::Vector3f(1.f, 0.5f, 0.5f)
+    );
+    staticSphere->name = "StaticSphere";
+    staticSphere->isInvisible = true;
 
     camera->SetPosition(Eigen::Vector3f(0.f, startY + 10.f, startZ + (M - 1) * spacing + 15.f));
     camera->LookAtDirection(Eigen::Vector3f(0.f, -0.5f, -1.f).normalized());

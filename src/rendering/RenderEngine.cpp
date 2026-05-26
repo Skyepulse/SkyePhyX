@@ -375,6 +375,19 @@ void RenderEngine::Render(void* userData)
     Eigen::Map<Eigen::Matrix4f>(frameUniforms.ProjectionMatrix) = proj;
     queue.WriteBuffer(this->uniformBuffer, 0, &frameUniforms, sizeof(Uniform));
 
+    BackgroundUniform backgroundUniforms{};
+    backgroundUniforms.resolution[0] = static_cast<float>(renderInfo.width);
+    backgroundUniforms.resolution[1] = static_cast<float>(renderInfo.height);
+    backgroundUniforms.time = static_cast<float>(renderInfo.time);
+    backgroundUniforms.tanHalfFovY = 1.0f / proj(1, 1);
+    const Eigen::Vector3f cameraRight = view.row(0).head<3>().transpose().normalized();
+    const Eigen::Vector3f cameraUp = view.row(1).head<3>().transpose().normalized();
+    const Eigen::Vector3f cameraForward = -view.row(2).head<3>().transpose().normalized();
+    Eigen::Map<Eigen::Vector3f>(backgroundUniforms.cameraRight) = cameraRight;
+    Eigen::Map<Eigen::Vector3f>(backgroundUniforms.cameraUp) = cameraUp;
+    Eigen::Map<Eigen::Vector3f>(backgroundUniforms.cameraForward) = cameraForward;
+    queue.WriteBuffer(this->backgroundUniformBuffer, 0, &backgroundUniforms, sizeof(BackgroundUniform));
+
     wgpu::PassTimestampWrites drawTimestamps{};
     drawTimestamps.querySet = this->gpuTimingQuerySet;
     drawTimestamps.beginningOfPassWriteIndex = 0;
@@ -395,6 +408,10 @@ void RenderEngine::Render(void* userData)
             renderPassDesc.timestampWrites = &drawTimestamps;
 
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPassDesc);
+
+        pass.SetPipeline(this->backgroundRenderPipeline.Get());
+        pass.SetBindGroup(0, this->backgroundBindGroup.Get());
+        pass.Draw(3);
 
         if (this->visibility.showMeshes)
         {
@@ -584,20 +601,20 @@ void RenderEngine::BuildPipeline()
 {
     // 1. SHADER
     std::string vertShaderCode;
-    if (getShaderCodeFromFile("Shaders/shader_vert.wgsl", vertShaderCode) < 0)
+    std::string fragShaderCode;
+    if (getShaderCodeFromFile("Shaders/background_vert.wgsl", vertShaderCode) < 0)
     {
         throw std::runtime_error(
             "[ERROR][RenderEngine] Failed to load vertex shader code from path: " +
-            (getExecutableDirectory() / "Shaders/shader_vert.wgsl").string()
+            (getExecutableDirectory() / "Shaders/background_vert.wgsl").string()
         );
     }
 
-    std::string fragShaderCode;
-    if (getShaderCodeFromFile("Shaders/shader_frag.wgsl", fragShaderCode) < 0)
+    if (getShaderCodeFromFile("Shaders/background_frag.wgsl", fragShaderCode) < 0)
     {
         throw std::runtime_error(
             "[ERROR][RenderEngine] Failed to load fragment shader code from path: " +
-            (getExecutableDirectory() / "Shaders/shader_frag.wgsl").string()
+            (getExecutableDirectory() / "Shaders/background_frag.wgsl").string()
         );
     }
 
@@ -607,6 +624,86 @@ void RenderEngine::BuildPipeline()
     wgsl.code = combinedShaderCode.c_str();
 
     wgpu::ShaderModuleDescriptor shaderDesc{};
+    shaderDesc.nextInChain = &wgsl;
+    shaderDesc.label = "BackgroundShaderModule";
+    this->backgroundShaderModule = this->wgpuBundle->GetDevice().CreateShaderModule(&shaderDesc);
+    if (!this->backgroundShaderModule)
+    {
+        throw std::runtime_error("[ERROR][RenderEngine] Failed to create background shader module.");
+    }
+
+    wgpu::BindGroupLayoutEntry backgroundEntry{};
+    backgroundEntry.binding = 0;
+    backgroundEntry.visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+    backgroundEntry.buffer.type = wgpu::BufferBindingType::Uniform;
+
+    wgpu::BindGroupLayoutDescriptor bindGroupLayoutDesc{};
+    if (!this->backgroundBindGroupLayout)
+    {
+        bindGroupLayoutDesc.label = "BackgroundBindGroupLayout";
+        bindGroupLayoutDesc.entryCount = 1;
+        bindGroupLayoutDesc.entries = &backgroundEntry;
+        this->backgroundBindGroupLayout = this->wgpuBundle->GetDevice().CreateBindGroupLayout(&bindGroupLayoutDesc);
+    }
+
+    wgpu::PipelineLayoutDescriptor pipelineLayoutDesc{};
+    pipelineLayoutDesc.label = "BackgroundPipelineLayout";
+    pipelineLayoutDesc.bindGroupLayoutCount = 1;
+    pipelineLayoutDesc.bindGroupLayouts = &this->backgroundBindGroupLayout;
+    this->backgroundPipelineLayout = this->wgpuBundle->GetDevice().CreatePipelineLayout(&pipelineLayoutDesc);
+
+    wgpu::VertexState vertexState{};
+    vertexState.module = this->backgroundShaderModule;
+    vertexState.entryPoint = "vs";
+
+    wgpu::ColorTargetState colorTarget{};
+    colorTarget.format = this->wgpuBundle->GetSwapchainFormat();
+    colorTarget.writeMask = wgpu::ColorWriteMask::All;
+
+    wgpu::FragmentState fragmentState{};
+    fragmentState.module = this->backgroundShaderModule;
+    fragmentState.entryPoint = "fs";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTarget;
+
+    wgpu::PrimitiveState primitiveState{};
+    primitiveState.topology = wgpu::PrimitiveTopology::TriangleList;
+    primitiveState.cullMode = wgpu::CullMode::None;
+
+    wgpu::DepthStencilState depthStencilState{};
+    depthStencilState.format = wgpu::TextureFormat::Depth24Plus;
+    depthStencilState.depthWriteEnabled = false;
+    depthStencilState.depthCompare = wgpu::CompareFunction::Always;
+
+    wgpu::RenderPipelineDescriptor pipelineDesc{};
+    pipelineDesc.label = "BackgroundRenderPipeline";
+    pipelineDesc.layout = this->backgroundPipelineLayout;
+    pipelineDesc.vertex = vertexState;
+    pipelineDesc.fragment = &fragmentState;
+    pipelineDesc.primitive = primitiveState;
+    pipelineDesc.depthStencil = &depthStencilState;
+    this->backgroundRenderPipeline = this->wgpuBundle->GetDevice().CreateRenderPipeline(&pipelineDesc);
+
+    if (getShaderCodeFromFile("Shaders/shader_vert.wgsl", vertShaderCode) < 0)
+    {
+        throw std::runtime_error(
+            "[ERROR][RenderEngine] Failed to load vertex shader code from path: " +
+            (getExecutableDirectory() / "Shaders/shader_vert.wgsl").string()
+        );
+    }
+
+    if (getShaderCodeFromFile("Shaders/shader_frag.wgsl", fragShaderCode) < 0)
+    {
+        throw std::runtime_error(
+            "[ERROR][RenderEngine] Failed to load fragment shader code from path: " +
+            (getExecutableDirectory() / "Shaders/shader_frag.wgsl").string()
+        );
+    }
+
+    combinedShaderCode = vertShaderCode + "\n" + fragShaderCode;
+
+    wgsl.code = combinedShaderCode.c_str();
+
     shaderDesc.nextInChain = &wgsl;
     shaderDesc.label = "MainShaderModule";
 
@@ -626,7 +723,6 @@ void RenderEngine::BuildPipeline()
     entries[1].visibility = wgpu::ShaderStage::Vertex;
     entries[1].buffer.type = wgpu::BufferBindingType::ReadOnlyStorage;
 
-    wgpu::BindGroupLayoutDescriptor bindGroupLayoutDesc{};
     bindGroupLayoutDesc.label = "InstanceDataBindGroupLayout";
     bindGroupLayoutDesc.entryCount = 2;
     bindGroupLayoutDesc.entries = entries;
@@ -634,7 +730,6 @@ void RenderEngine::BuildPipeline()
     this->instanceBindGroupLayout = this->wgpuBundle->GetDevice().CreateBindGroupLayout(&bindGroupLayoutDesc);
 
     // 3. Pipeline Layout
-    wgpu::PipelineLayoutDescriptor pipelineLayoutDesc{};
     pipelineLayoutDesc.label = "MainPipelineLayout";
     pipelineLayoutDesc.bindGroupLayoutCount = 1;
     pipelineLayoutDesc.bindGroupLayouts = &this->instanceBindGroupLayout;
@@ -660,32 +755,26 @@ void RenderEngine::BuildPipeline()
     vertexBufferLayout.attributeCount = 3;
     vertexBufferLayout.attributes = attributes;
 
-    wgpu::VertexState vertexState{};
     vertexState.module = this->shaderModule;
     vertexState.entryPoint = "vs";
     vertexState.bufferCount = 1;
     vertexState.buffers = &vertexBufferLayout;
 
-    wgpu::ColorTargetState colorTarget{};
     colorTarget.format = this->wgpuBundle->GetSwapchainFormat();
     colorTarget.writeMask = wgpu::ColorWriteMask::All;
 
-    wgpu::FragmentState fragmentState{};
     fragmentState.module = this->shaderModule;
     fragmentState.entryPoint = "fs";
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTarget;
 
-    wgpu::PrimitiveState primitiveState{};
     primitiveState.topology = this->meshRenderOptions.wireframe ? wgpu::PrimitiveTopology::LineList : wgpu::PrimitiveTopology::TriangleList;
     primitiveState.cullMode = wgpu::CullMode::None;
 
-    wgpu::DepthStencilState depthStencilState{};
     depthStencilState.format = wgpu::TextureFormat::Depth24Plus;
     depthStencilState.depthWriteEnabled = true;
     depthStencilState.depthCompare = wgpu::CompareFunction::Less;
 
-    wgpu::RenderPipelineDescriptor pipelineDesc{};
     pipelineDesc.label = "MainRenderPipeline";
     pipelineDesc.layout = this->pipelineLayout;
     pipelineDesc.vertex = vertexState;
@@ -1104,6 +1193,25 @@ void RenderEngine::BuildGeometryAtlas()
 //================================//
 void RenderEngine::BuildBuffers()
 {
+    wgpu::BufferDescriptor backgroundUniformBufferDesc{};
+    backgroundUniformBufferDesc.label = "BackgroundUniformBuffer";
+    backgroundUniformBufferDesc.size = sizeof(BackgroundUniform);
+    backgroundUniformBufferDesc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    this->backgroundUniformBuffer = this->wgpuBundle->GetDevice().CreateBuffer(&backgroundUniformBufferDesc);
+
+    wgpu::BindGroupEntry backgroundBindGroupEntry{};
+    backgroundBindGroupEntry.binding = 0;
+    backgroundBindGroupEntry.buffer = this->backgroundUniformBuffer;
+    backgroundBindGroupEntry.offset = 0;
+    backgroundBindGroupEntry.size = sizeof(BackgroundUniform);
+
+    wgpu::BindGroupDescriptor backgroundBindGroupDesc{};
+    backgroundBindGroupDesc.label = "BackgroundBindGroup";
+    backgroundBindGroupDesc.layout = this->backgroundBindGroupLayout;
+    backgroundBindGroupDesc.entryCount = 1;
+    backgroundBindGroupDesc.entries = &backgroundBindGroupEntry;
+    this->backgroundBindGroup = this->wgpuBundle->GetDevice().CreateBindGroup(&backgroundBindGroupDesc);
+
     // Geometry Atlas Buffers
     wgpu::BufferDescriptor vertexBufferDesc{};
     vertexBufferDesc.label = "AtlasVertexBuffer";

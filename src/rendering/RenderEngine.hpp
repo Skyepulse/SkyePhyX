@@ -84,6 +84,17 @@ struct Uniform
 };
 static_assert(sizeof(Uniform) == 128, "Uniform must be tightly packed to 128 bytes for correct buffer layout");
 
+struct BackgroundUniform
+{
+    float resolution[2];
+    float time;
+    float tanHalfFovY;
+    float cameraRight[4];
+    float cameraUp[4];
+    float cameraForward[4];
+};
+static_assert(sizeof(BackgroundUniform) == 64, "BackgroundUniform must be tightly packed to 64 bytes for correct buffer layout");
+
 //================================//
 struct RingAccumulator 
 {
@@ -231,6 +242,13 @@ private:
     wgpu::Texture depthTexture;
     wgpu::Buffer uniformBuffer;
     wgpu::SurfaceTexture currentTexture;
+
+    wgpu::ShaderModule backgroundShaderModule;
+    wgpu::PipelineLayout backgroundPipelineLayout;
+    wgpu::RenderPipeline backgroundRenderPipeline;
+    wgpu::BindGroupLayout backgroundBindGroupLayout;
+    wgpu::BindGroup backgroundBindGroup;
+    wgpu::Buffer backgroundUniformBuffer;
 
     //============== WGPU OBJECTS (Lines Pipeline) ==================//
     wgpu::ShaderModule lineShaderModule;

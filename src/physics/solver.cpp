@@ -230,15 +230,15 @@ void Solver::RemoveBody(Mesh* body)
 //================================//
 Mesh* Solver::AddParticle(float mass, float friction, const Eigen::Vector3f& position, const Eigen::Vector3f& velocity, bool isStatic, const Eigen::Vector3f& color)
 {
-    Eigen::Vector3f scale(0.1f, 0.1f, 0.1f);
-    Mesh* particle = AddBody(ModelType_Cube, mass / (scale.x() * scale.y() * scale.z()), friction, position, scale, velocity, Quaternionf::Identity(), Eigen::Vector3f::Zero(), isStatic, color);
+    Eigen::Vector3f particleScale(0.1f, 0.1f, 0.1f);
+    Mesh* particle = AddBody(ModelType_Cube, mass / (particleScale.x() * particleScale.y() * particleScale.z()), friction, position, Eigen::Vector3f(0.1f, 0.1f, 0.1f), velocity, Quaternionf::Identity(), Eigen::Vector3f::Zero(), isStatic, color);
     particle->isParticle = true;
 
     // Zero out inertia and every rotation related properties since it's a particle
     particle->inertiaTensorBody = Eigen::Matrix3f::Zero();
-    particle->inertiaTensorBodyInv = Eigen::Matrix3f::Zero();
-    particle->angularVelocity = Eigen::Vector3f::Zero();
-    
+        particle->inertiaTensorBodyInv = Eigen::Matrix3f::Zero();
+        particle->angularVelocity = Eigen::Vector3f::Zero();
+        
     return particle;
 }
 
