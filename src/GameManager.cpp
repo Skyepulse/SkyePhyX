@@ -8,6 +8,7 @@
 #include <limits>
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
+#include <emscripten/html5.h>
 #endif
 
 //================================//
@@ -106,6 +107,10 @@ GameManager::GameManager(): window(nullptr, &glfwDestroyWindow)
     this->wgpuBundle = std::make_unique<WgpuBundle>(windowFormat);
     this->solver = std::make_unique<Solver>();
     this->renderEngine = std::make_unique<RenderEngine>(this->wgpuBundle.get(), this->solver.get(), this);
+
+#ifdef __EMSCRIPTEN__
+    this->RegisterMobileTouchCallbacks();
+#endif
 
     this->correctlyInitialized = true;
 }
@@ -241,18 +246,24 @@ void GameManager::ProcessEvents(float deltaTime)
     glfwPollEvents();
 
     Camera* camera = this->renderEngine->GetCamera();
-    bool mouseCapturedByUi = this->renderEngine->IsImGuiCapturingMouse();
 
     bool isShiftPressed = glfwGetKey(this->window.get(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(this->window.get(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
     float speed = isShiftPressed ? 60.0f : 10.0f;
 
     double mouseX, mouseY;
     glfwGetCursorPos(this->window.get(), &mouseX, &mouseY);
+    bool mouseCapturedByUi = this->renderEngine->IsScreenPointInsideUi(static_cast<float>(mouseX), static_cast<float>(mouseY));
 
     bool rightMousePressed = glfwGetMouseButton(this->window.get(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     bool leftMousePressed = glfwGetMouseButton(this->window.get(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
 
-    if (!mouseCapturedByUi && rightMousePressed)
+#ifdef __EMSCRIPTEN__
+    const bool touchHandled = this->ProcessTouchEvents(deltaTime);
+#else
+    const bool touchHandled = false;
+#endif
+
+    if (!touchHandled && !mouseCapturedByUi && rightMousePressed)
     {
         if (!this->rMouseClicked)
         {
@@ -276,60 +287,10 @@ void GameManager::ProcessEvents(float deltaTime)
         this->rMouseClicked = false;
     }
 
-    if (leftMousePressed)
+    if (!touchHandled)
+        this->ProcessPrimaryPointer(leftMousePressed, static_cast<float>(mouseX), static_cast<float>(mouseY), mouseCapturedByUi);
+    else if (!leftMousePressed)
     {
-        if (this->pickMeshes)
-        {
-            this->objectPicker.screenX = static_cast<float>(mouseX);
-            this->objectPicker.screenY = static_cast<float>(mouseY);
-
-            if (!this->lMouseClicked && !mouseCapturedByUi)
-            {
-                this->objectPicker.active = RaycastFromMouse(
-                    static_cast<float>(mouseX),
-                    static_cast<float>(mouseY),
-                    this->objectPicker.localHitPoint,
-                    this->objectPicker.pickedMesh,
-                    this->objectPicker.hitDistance
-                );
-
-                if (this->objectPicker.active)
-                {
-                    Eigen::Vector3f target = ProjectMouseToPickDepth(static_cast<float>(mouseX), static_cast<float>(mouseY), this->objectPicker.hitDistance);
-                    Vector6f stiffness = Vector6f::Zero();
-                    stiffness.head<3>().setConstant(8000.0f);
-                    this->objectPicker.mouseJoint = static_cast<Joint*>(this->solver->AddForce(std::make_unique<Joint>(
-                        this->solver.get(),
-                        nullptr,
-                        target,
-                        this->objectPicker.pickedMesh,
-                        this->objectPicker.localHitPoint,
-                        stiffness
-                    )));
-                    for (int i = 0; i < 3; ++i)
-                        this->objectPicker.mouseJoint->constraintPoints[i].penalty = stiffness[i];
-                }
-            }
-
-            if (this->objectPicker.active && this->objectPicker.mouseJoint)
-            {
-                this->objectPicker.mouseJoint->rA = ProjectMouseToPickDepth(static_cast<float>(mouseX), static_cast<float>(mouseY), this->objectPicker.hitDistance);
-            }
-        }
-
-        else if (this->shootSpheres)
-        {
-            if (!this->lMouseClicked && !mouseCapturedByUi)
-            {
-                SpawnShootingSphere(mouseX, mouseY);
-            }
-        }
-
-        this->lMouseClicked = true;
-    }
-    else
-    {
-        ReleaseObjectPicker();
         this->lMouseClicked = false;
     }
 
@@ -506,6 +467,196 @@ void GameManager::SpawnShootingSphere(float mouseX, float mouseY)
     Mesh* mesh = this->solver->AddBody(ModelType_Sphere, 1.0f, 0.5f, spawnPos, Eigen::Vector3f(sphereRadius, sphereRadius, sphereRadius), initialVelocity, Quaternionf::Identity(), Eigen::Vector3f(0.0f, 0.0f, 0.0f), false, randomColor);
     mesh->name = "Shooting Sphere " + std::to_string(numBodies);
 }
+
+//================================//
+bool GameManager::ShouldSpawnDragSphere(float screenX, float screenY)
+{
+    constexpr double kSpawnIntervalSeconds = 0.075;
+    constexpr float kMinDragDistancePixels = 18.0f;
+
+    const double now = this->renderInfo.time;
+    const float dx = screenX - this->lastSphereDragX;
+    const float dy = screenY - this->lastSphereDragY;
+    const float distanceSquared = dx * dx + dy * dy;
+
+    return (now - this->lastSphereDragSpawnTime) >= kSpawnIntervalSeconds &&
+        distanceSquared >= kMinDragDistancePixels * kMinDragDistancePixels;
+}
+
+//================================//
+void GameManager::ProcessPrimaryPointer(bool pressed, float screenX, float screenY, bool capturedByUi)
+{
+    if (!pressed || capturedByUi)
+    {
+        ReleaseObjectPicker();
+        this->lMouseClicked = false;
+        return;
+    }
+
+    if (this->pickMeshes)
+    {
+        this->objectPicker.screenX = screenX;
+        this->objectPicker.screenY = screenY;
+
+        if (!this->lMouseClicked)
+        {
+            this->objectPicker.active = RaycastFromMouse(
+                screenX,
+                screenY,
+                this->objectPicker.localHitPoint,
+                this->objectPicker.pickedMesh,
+                this->objectPicker.hitDistance
+            );
+
+            if (this->objectPicker.active)
+            {
+                Eigen::Vector3f target = ProjectMouseToPickDepth(screenX, screenY, this->objectPicker.hitDistance);
+                Vector6f stiffness = Vector6f::Zero();
+                stiffness.head<3>().setConstant(8000.0f);
+                this->objectPicker.mouseJoint = static_cast<Joint*>(this->solver->AddForce(std::make_unique<Joint>(
+                    this->solver.get(),
+                    nullptr,
+                    target,
+                    this->objectPicker.pickedMesh,
+                    this->objectPicker.localHitPoint,
+                    stiffness
+                )));
+                for (int i = 0; i < 3; ++i)
+                    this->objectPicker.mouseJoint->constraintPoints[i].penalty = stiffness[i];
+            }
+        }
+
+        if (this->objectPicker.active && this->objectPicker.mouseJoint)
+            this->objectPicker.mouseJoint->rA = ProjectMouseToPickDepth(screenX, screenY, this->objectPicker.hitDistance);
+    }
+    else if (this->shootSpheres)
+    {
+        if (!this->lMouseClicked || this->ShouldSpawnDragSphere(screenX, screenY))
+        {
+            SpawnShootingSphere(screenX, screenY);
+            this->lastSphereDragSpawnTime = this->renderInfo.time;
+            this->lastSphereDragX = screenX;
+            this->lastSphereDragY = screenY;
+        }
+    }
+
+    this->lMouseClicked = true;
+}
+
+#ifdef __EMSCRIPTEN__
+//================================//
+void GameManager::RegisterMobileTouchCallbacks()
+{
+    emscripten_set_touchstart_callback("#canvas", this, false, &GameManager::HandleTouchEvent);
+    emscripten_set_touchmove_callback("#canvas", this, false, &GameManager::HandleTouchEvent);
+    emscripten_set_touchend_callback("#canvas", this, false, &GameManager::HandleTouchEvent);
+    emscripten_set_touchcancel_callback("#canvas", this, false, &GameManager::HandleTouchEvent);
+}
+
+//================================//
+EM_BOOL GameManager::HandleTouchEvent(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData)
+{
+    GameManager* manager = static_cast<GameManager*>(userData);
+    if (!manager || !touchEvent)
+        return EM_FALSE;
+
+    TouchInputState& touch = manager->touchInput;
+    touch.touchCount = std::min(touchEvent->numTouches, 2);
+    touch.active = touch.touchCount > 0 && eventType != EMSCRIPTEN_EVENT_TOUCHCANCEL;
+
+    if (!touch.active)
+    {
+        touch.touchCount = 0;
+        touch.pinchActive = false;
+        return EM_TRUE;
+    }
+
+    const EmscriptenTouchPoint& firstTouch = touchEvent->touches[0];
+    touch.primaryX = static_cast<float>(firstTouch.targetX);
+    touch.primaryY = static_cast<float>(firstTouch.targetY);
+
+    if (!touch.wasActive || eventType == EMSCRIPTEN_EVENT_TOUCHSTART)
+    {
+        touch.previousPrimaryX = touch.primaryX;
+        touch.previousPrimaryY = touch.primaryY;
+        touch.consumedByUi = manager->renderEngine &&
+            manager->renderEngine->IsScreenPointInsideUi(touch.primaryX, touch.primaryY);
+    }
+
+    if (touch.touchCount >= 2)
+    {
+        const EmscriptenTouchPoint& secondTouch = touchEvent->touches[1];
+        const float secondX = static_cast<float>(secondTouch.targetX);
+        const float secondY = static_cast<float>(secondTouch.targetY);
+        const float dx = secondX - touch.primaryX;
+        const float dy = secondY - touch.primaryY;
+        touch.pinchDistance = std::sqrt(dx * dx + dy * dy);
+    }
+
+    return EM_TRUE;
+}
+
+//================================//
+bool GameManager::ProcessTouchEvents(float deltaTime)
+{
+    (void)deltaTime;
+
+    if (!this->touchInput.active && !this->touchInput.wasActive)
+        return false;
+
+    Camera* camera = this->renderEngine->GetCamera();
+
+    if (!this->touchInput.active)
+    {
+        this->ProcessPrimaryPointer(false, this->touchInput.previousPrimaryX, this->touchInput.previousPrimaryY, false);
+        this->touchInput.wasActive = false;
+        this->touchInput.consumedByUi = false;
+        this->touchInput.pinchActive = false;
+        return true;
+    }
+
+    if (this->touchInput.consumedByUi)
+    {
+        this->ProcessPrimaryPointer(false, this->touchInput.primaryX, this->touchInput.primaryY, true);
+        this->touchInput.previousPrimaryX = this->touchInput.primaryX;
+        this->touchInput.previousPrimaryY = this->touchInput.primaryY;
+        this->touchInput.wasActive = true;
+        return true;
+    }
+
+    if (this->touchInput.touchCount >= 2)
+    {
+        ReleaseObjectPicker();
+        this->lMouseClicked = false;
+
+        if (!this->touchInput.pinchActive || this->touchInput.previousPinchDistance <= 1.0f)
+        {
+            this->touchInput.previousPinchDistance = this->touchInput.pinchDistance;
+            this->touchInput.pinchActive = true;
+        }
+        else if (this->touchInput.pinchDistance > 1.0f)
+        {
+            const float ratio = this->touchInput.pinchDistance / this->touchInput.previousPinchDistance;
+            const float zoomDelta = std::clamp(std::log(ratio) * 25.0f, -8.0f, 8.0f);
+            if (std::isfinite(zoomDelta))
+                camera->MoveForwardBy(zoomDelta);
+            this->touchInput.previousPinchDistance = this->touchInput.pinchDistance;
+        }
+
+        this->touchInput.previousPrimaryX = this->touchInput.primaryX;
+        this->touchInput.previousPrimaryY = this->touchInput.primaryY;
+        this->touchInput.wasActive = true;
+        return true;
+    }
+
+    this->touchInput.pinchActive = false;
+    this->ProcessPrimaryPointer(true, this->touchInput.primaryX, this->touchInput.primaryY, false);
+    this->touchInput.previousPrimaryX = this->touchInput.primaryX;
+    this->touchInput.previousPrimaryY = this->touchInput.primaryY;
+    this->touchInput.wasActive = true;
+    return true;
+}
+#endif
 
 //================================//
 void GameManager::ReleaseObjectPicker()

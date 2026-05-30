@@ -431,9 +431,9 @@ static void SoftSpheres(Solver* solver, Camera* camera, const LevelParameters& p
     Eigen::Vector3f Spawn2 = Eigen::Vector3f(0.0f, SpawnY, 0.0f);
     Eigen::Vector3f Spawn3 = Eigen::Vector3f(2.f*radius, SpawnY, -2.f*radius);
 
-    //makeTetSphere(solver, Spawn1.x(), Spawn1.y(), Spawn1.z(), radius, res, 500.f, 0.4f, Eigen::Vector3f(0.5f, 0.5f, 1.0f), params.particleMass);
+    makeTetSphere(solver, Spawn1.x(), Spawn1.y(), Spawn1.z(), radius, res, 500.f, 0.4f, Eigen::Vector3f(0.5f, 0.5f, 1.0f), params.particleMass);
     makeTetSphere(solver, Spawn2.x(), Spawn2.y(), Spawn2.z(), radius, res, params.E, params.nu, Eigen::Vector3f(1.0f, 0.5f, 0.5f), params.particleMass);
-    //makeTetSphere(solver, Spawn3.x(), Spawn3.y(), Spawn3.z(), radius, res, 20000, 0.49, Eigen::Vector3f(0.5f, 1.0f, 0.5f), params.particleMass);
+    makeTetSphere(solver, Spawn3.x(), Spawn3.y(), Spawn3.z(), radius, res, 100.f, 0.3f, Eigen::Vector3f(0.5f, 1.0f, 0.5f), params.particleMass);
 
     camera->SetPosition(Eigen::Vector3f(0.0f, -2.0f, 25.0f));
     camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
@@ -496,7 +496,7 @@ static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameter
         true, Eigen::Vector3f(1.f, 0.5f, 0.5f)
     );
     staticSphere->name = "StaticSphere";
-    staticSphere->isInvisible = true;
+    staticSphere->transform.SetSpecialRenderScale(Eigen::Vector3f(0.92f, 0.92f, 0.92f));
 
     camera->SetPosition(Eigen::Vector3f(0.f, startY + 10.f, startZ + (M - 1) * spacing + 15.f));
     camera->LookAtDirection(Eigen::Vector3f(0.f, -0.5f, -1.f).normalized());
@@ -1175,41 +1175,40 @@ static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
 {
     DefaultScene,
     Pyramid,
+    Stacking,
+    JointPlayground,
+    NeoHookeanMesh,
+    ClothSimulation,
+    SoftSpheres,
+    Capsules,
+    TestConvexMeshShowcase,
     MassStack,
     FrictionSlope,
-    MassSprings,
-    JointPlayground,
     NeoHookeanTetTest,
-    NeoHookeanMesh,
-    SoftSpheres,
-    ClothSimulation,
+    MassSprings,
     SafetyNet,
     Particles,
     Spheres,
-    TestConvexMeshShowcase,
-    Stacking,
-    Capsules
 };
 
 //================================//
 static const char* names[] = {
-    "Default",
-    "Pyramid",
-    "MassStack",
-    "FrictionSlope",
-    "MassSprings",
-    "JointPlayground",
-    "NeoHookeanTetTest",
-    "SoftBeam",
-    "SoftSpheres",
-    "ClothSimulation",
-    "SafetyNet",
+    "Empty scene",
+    "Pyramid scene",
+    "Stacking",
+    "Joint playground",
+    "Soft beam physics",
+    "Cloth simulation",
+    "Soft spheres",
+    "Capsules",
+    "Convex mesh showcase",
+    "Mass stack",
+    "Friction slope",
+    "NeoHookean tetrahedron",
+    "Mass springs",
+    "Safety net",
     "Particles",
     "Spheres",
-    "TestConvexMeshShowcase",
-    "Stacking",
-    "Capsules"
-
 };
 
 static const int numLevels = 16;

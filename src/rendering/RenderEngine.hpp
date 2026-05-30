@@ -11,6 +11,8 @@
 #include "../helpers/camera.hpp"
 #include "../helpers/geometry.hpp"
 
+#include <array>
+
 // forward declaration
 class RenderEngine;
 class GameManager;
@@ -191,6 +193,7 @@ public:
     //================================//
     Camera* GetCamera() { return this->camera.get(); }
     bool IsImGuiCapturingMouse() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse; }
+    bool IsScreenPointInsideUi(float screenX, float screenY) const;
 
     bool debug = true;
     RenderTimings renderTimings;
@@ -205,6 +208,8 @@ private:
     bool showPerformanceMetrics = false;
     MeshRenderOptions meshRenderOptions;
     RenderVisibility visibility;
+    std::array<ImVec4, 4> uiHitRects{};
+    int uiHitRectCount = 0;
 
     wgpu::QuerySet gpuTimingQuerySet;
     wgpu::Buffer gpuTimingResolveBuffer;
@@ -288,6 +293,8 @@ private:
     //================================//
     void InitImGui();
     void RenderImGui(wgpu::RenderPassEncoder& pass);
+    void BeginUiHitRects();
+    void CaptureCurrentWindowHitRect();
     void InitializeGPUTimingQueries();
     void ReadTimingQueries();
 

@@ -8,6 +8,10 @@
 #include "physics/solver.hpp"
 #include "levels.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/html5.h>
+#endif
+
 //================================//
 struct ObjectPicker
 {
@@ -21,6 +25,26 @@ struct ObjectPicker
 
     Joint* mouseJoint = nullptr;
 };
+
+#ifdef __EMSCRIPTEN__
+//================================//
+struct TouchInputState
+{
+    bool active = false;
+    bool wasActive = false;
+    bool consumedByUi = false;
+    bool pinchActive = false;
+    int touchCount = 0;
+
+    float primaryX = 0.0f;
+    float primaryY = 0.0f;
+    float previousPrimaryX = 0.0f;
+    float previousPrimaryY = 0.0f;
+
+    float pinchDistance = 0.0f;
+    float previousPinchDistance = 0.0f;
+};
+#endif
 
 //================================//
 class GameManager
@@ -77,6 +101,13 @@ private:
     bool randomBoxSpawnedPressed = false;
     bool mainLoopStarted = false;
     float physicsAccumulator = 0.0f;
+    double lastSphereDragSpawnTime = -1000.0;
+    float lastSphereDragX = 0.0f;
+    float lastSphereDragY = 0.0f;
+
+#ifdef __EMSCRIPTEN__
+    TouchInputState touchInput;
+#endif
 
     //================================//
     void ProcessEvents(float deltaTime);
@@ -87,9 +118,17 @@ private:
     //================================//
     void SpawnRandomMesh();
     void SpawnShootingSphere(float mouseX = 0.0f, float mouseY = 0.0f);
+    void ProcessPrimaryPointer(bool pressed, float screenX, float screenY, bool capturedByUi);
+    bool ShouldSpawnDragSphere(float screenX, float screenY);
     void ReleaseObjectPicker();
     Eigen::Vector3f ProjectMouseToPickDepth(float screenX, float screenY, float depth);
     bool RaycastFromMouse(float screenX, float screenY, Eigen::Vector3f& outHitPoint, Mesh*& outHitMesh, float& outHitDistance);
+
+#ifdef __EMSCRIPTEN__
+    void RegisterMobileTouchCallbacks();
+    bool ProcessTouchEvents(float deltaTime);
+    static EM_BOOL HandleTouchEvent(int eventType, const EmscriptenTouchEvent* touchEvent, void* userData);
+#endif
 
     //================================//
     int currentLevel = 1;

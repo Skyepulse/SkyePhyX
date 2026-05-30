@@ -554,6 +554,8 @@ void Manifold::ComputeDerivatives(Mesh* mesh)
 //================================//
 void Manifold::AddLineData(std::vector<GPULineData>& data) const
 {
+    return;
+    /*
     for (int i = 0; i < numContactPoints; i++)
     {
         if (contactPoints[i].penetration <= 0.f) continue;
@@ -570,6 +572,7 @@ void Manifold::AddLineData(std::vector<GPULineData>& data) const
         line.color[3] = 1.f;
         data.push_back(line);
     }
+    */
 }
 
 //================================//

@@ -2,6 +2,7 @@
 #include "../physics/solver.hpp"
 #include "../levels.h"
 #include "../GameManager.hpp"
+#include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <iostream>
@@ -39,13 +40,14 @@ static Eigen::Vector3f AVBDGraphColor(int colorIndex)
 //================================//
 void RenderEngine::InitImGui()
 {
-    constexpr float kWebImGuiScale = 0.9f;
-    constexpr float kBaseFontSizePixels = 15.0f;
+    constexpr float kWebImGuiScale = 1.15f;
+    constexpr float kBaseFontSizePixels = 16.0f;
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     io.Fonts->Clear();
 
@@ -70,6 +72,7 @@ void RenderEngine::InitImGui()
     style.ItemSpacing = ImVec2(8.0f, 7.0f);
     style.ScrollbarSize = 14.0f;
     style.GrabMinSize = 10.0f;
+    style.TouchExtraPadding = ImVec2(0.0f, 0.0f);
     style.WindowRounding = 6.0f;
     style.FrameRounding = 4.0f;
     style.GrabRounding = 4.0f;
@@ -93,7 +96,11 @@ void RenderEngine::InitImGui()
     colors[ImGuiCol_Header] = ImVec4(0.18f, 0.25f, 0.29f, 1.00f);
     colors[ImGuiCol_HeaderHovered] = ImVec4(0.25f, 0.36f, 0.41f, 1.00f);
     colors[ImGuiCol_HeaderActive] = ImVec4(0.20f, 0.55f, 0.62f, 1.00f);
+    
 #ifdef __EMSCRIPTEN__
+    style.TouchExtraPadding = ImVec2(8.0f, 6.0f);
+    style.ScrollbarSize = 20.0f;
+    style.GrabMinSize = 18.0f;
     style.ScaleAllSizes(kWebImGuiScale);
 #endif
 
@@ -116,22 +123,75 @@ void RenderEngine::InitImGui()
 }
 
 //================================//
+void RenderEngine::BeginUiHitRects()
+{
+    this->uiHitRectCount = 0;
+}
+
+//================================//
+void RenderEngine::CaptureCurrentWindowHitRect()
+{
+    if (this->uiHitRectCount >= static_cast<int>(this->uiHitRects.size()))
+        return;
+
+    const ImVec2 pos = ImGui::GetWindowPos();
+    const ImVec2 size = ImGui::GetWindowSize();
+    constexpr float kPadding = 8.0f;
+
+    this->uiHitRects[this->uiHitRectCount++] = ImVec4(
+        pos.x - kPadding,
+        pos.y - kPadding,
+        pos.x + size.x + kPadding,
+        pos.y + size.y + kPadding
+    );
+}
+
+//================================//
+bool RenderEngine::IsScreenPointInsideUi(float screenX, float screenY) const
+{
+    if (this->IsImGuiCapturingMouse())
+        return true;
+
+    for (int i = 0; i < this->uiHitRectCount; ++i)
+    {
+        const ImVec4& rect = this->uiHitRects[i];
+        if (screenX >= rect.x && screenX <= rect.z && screenY >= rect.y && screenY <= rect.w)
+            return true;
+    }
+
+    return false;
+}
+
+//================================//
 void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
 {
     ImGui_ImplWGPU_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+    this->BeginUiHitRects();
 
     constexpr float kWindowPadding = 12.0f;
     ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const bool narrowViewport = viewport->WorkSize.x < 720.0f;
 
-    ImGui::SetNextWindowPos(
-        ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - kWindowPadding, viewport->WorkPos.y + kWindowPadding),
-        ImGuiCond_Once,
-        ImVec2(1.0f, 0.0f)
-    );
+    if (narrowViewport)
+    {
+        const float width = std::max(220.0f, viewport->WorkSize.x - 2.0f * kWindowPadding);
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + kWindowPadding, viewport->WorkPos.y + kWindowPadding), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Always);
+    }
+    else
+    {
+        ImGui::SetNextWindowPos(
+            ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - kWindowPadding, viewport->WorkPos.y + kWindowPadding),
+            ImGuiCond_Once,
+            ImVec2(1.0f, 0.0f)
+        );
+    }
 
     ImGui::Begin("Simulation Parameters");
+    this->CaptureCurrentWindowHitRect();
+    ImGui::PushItemWidth(narrowViewport ? -1.0f : 240.0f);
     ImGui::Text("Level Selection");
 
     int currentLevel = this->gameManager->GetCurrentLevel();
@@ -212,6 +272,7 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
     ImGui::SliderFloat("Gamma", &this->solver->gamma, 0.0f, 1.0f);
     ImGui::InputFloat("Beta", &this->solver->beta, 1000.0f, 1000000.0f, "%.1f");
     ImGui::SliderFloat("Step value", &this->solver->stepValue, 0.001f, 0.1f);
+    ImGui::PopItemWidth();
     ImGui::End();
 
     if (this->showPerformanceMetrics)
@@ -223,6 +284,7 @@ void RenderEngine::RenderImGui(wgpu::RenderPassEncoder& pass)
 
         if (ImGui::Begin("Performance Metrics", &this->showPerformanceMetrics))
         {
+            this->CaptureCurrentWindowHitRect();
             ImGui::Text("GPU Draw Time: %.3f ms", this->gpuFrameTimeDrawMs);
             ImGui::Separator();
 

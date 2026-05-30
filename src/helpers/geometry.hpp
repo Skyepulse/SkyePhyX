@@ -167,6 +167,12 @@ public:
     }
 
     //================================//
+    void SetSpecialRenderScale(const Eigen::Vector3f& specialRenderScale)
+    {
+        this->specialRenderScale = specialRenderScale;
+    }
+
+    //================================//
     Eigen::Vector3f GetPosition() const
     {
         return position;
@@ -190,9 +196,9 @@ public:
         outModelMatrix = Eigen::Matrix4f::Identity();
         outModelMatrix.block<3, 3>(0, 0) = rotation.toRotationMatrix();
 
-        outModelMatrix.col(0) *= scale.x();
-        outModelMatrix.col(1) *= scale.y();
-        outModelMatrix.col(2) *= scale.z();
+        outModelMatrix.col(0) *= scale.x() * specialRenderScale.x();
+        outModelMatrix.col(1) *= scale.y() * specialRenderScale.y();
+        outModelMatrix.col(2) *= scale.z() * specialRenderScale.z();
 
         outModelMatrix.block<3, 1>(0, 3) = position;
     }
@@ -218,6 +224,7 @@ private:
     Eigen::Vector3f position;
     Quaternionf rotation;
     Eigen::Vector3f scale;
+    Eigen::Vector3f specialRenderScale = Eigen::Vector3f::Ones();
 };
 
 //================================//
