@@ -200,12 +200,13 @@
     Real-time constraint-based physics running in-browser via WebGPU.<br>
     Implements <strong>AVBD</strong> (Giles, Diaz, Yuksel — SIGGRAPH 2025) on top of
     <strong>VBD</strong> (Chen, Liu, Yang, Yuksel — SIGGRAPH 2024).
-    Rigid bodies, soft bodies (Neo-Hookean / StVK FEM), contacts, friction, and joints.
+    Rigid bodies, soft bodies (Neo-Hookean / StVK FEM), contacts, collision detection, friction, and joints.
   </p>
 
   <h3>Camera</h3>
   <ul>
     <li><span class="key">LMB</span> drag — orbit</li>
+    <li><span class="key">RMB</span> Either pick a dynamic body OR shoot sphere (radio button choose)</li>
     <li><span class="key">W</span> / <span class="key">Z</span> — forward</li>
     <li><span class="key">S</span> — backward</li>
     <li><span class="key">A</span> / <span class="key">Q</span> — strafe left</li>
@@ -220,7 +221,7 @@
     <li><span class="key">P</span> — pause / resume</li>
     <li><span class="key">N</span> — single step (while paused)</li>
     <li><span class="key">R</span> — restart level</li>
-    <li><span class="key">B</span> — spawn random rigid box</li>
+    <li><span class="key">B</span> — spawn random rigidBody</li>
   </ul>
 
   <h3>UI Panel</h3>
