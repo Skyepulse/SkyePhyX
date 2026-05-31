@@ -433,7 +433,7 @@ static void SoftSpheres(Solver* solver, Camera* camera, const LevelParameters& p
 
     makeTetSphere(solver, Spawn1.x(), Spawn1.y(), Spawn1.z(), radius, res, 500.f, 0.4f, Eigen::Vector3f(0.5f, 0.5f, 1.0f), params.particleMass);
     makeTetSphere(solver, Spawn2.x(), Spawn2.y(), Spawn2.z(), radius, res, params.E, params.nu, Eigen::Vector3f(1.0f, 0.5f, 0.5f), params.particleMass);
-    makeTetSphere(solver, Spawn3.x(), Spawn3.y(), Spawn3.z(), radius, res, 100.f, 0.3f, Eigen::Vector3f(0.5f, 1.0f, 0.5f), params.particleMass);
+    //makeTetSphere(solver, Spawn3.x(), Spawn3.y(), Spawn3.z(), radius, res, 100.f, 0.3f, Eigen::Vector3f(0.5f, 1.0f, 0.5f), params.particleMass);
 
     camera->SetPosition(Eigen::Vector3f(0.0f, -2.0f, 25.0f));
     camera->LookAtDirection(Eigen::Vector3f(0.0f, 0.0f, -1.0f));
@@ -443,10 +443,10 @@ static void SoftSpheres(Solver* solver, Camera* camera, const LevelParameters& p
 static void ClothSimulation(Solver* solver, Camera* camera, const LevelParameters& params)
 {
     const int   N       = 20;
-    const int   M       = 40;
+    const int   M       = 30;
     const float spacing = 0.5f;
     const float startX  = -(N - 1) * spacing * 0.5f;
-    const float startY  = 5.f;
+    const float startY  = 4.f;
 
     const float startZ = -(M - 1) * spacing * 0.5f;
 

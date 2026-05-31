@@ -927,10 +927,6 @@ void Solver::Step()
     if (this->emergencyStop) return;
     out.velocityUpdateMs = Time::MillisecondsSince(phaseStart);
 
-    // 6.5 Remove out of bound bodies
-    for (Mesh* m : oob)
-        RemoveBody(m);
-
     // 7. Post-stabilization: alpha = 0.0f
     phaseStart = Time::Clock::now();
     if (postStabilization)
@@ -995,6 +991,9 @@ void Solver::Step()
         }
     }
     out.postStabMs = Time::MillisecondsSince(phaseStart);
+
+    for (Mesh* m : oob)
+        RemoveBody(m);
 
     out.totalSubstepMs = Time::MillisecondsSince(stepStart);
 
