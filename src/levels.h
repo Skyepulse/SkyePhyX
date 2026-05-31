@@ -1171,11 +1171,75 @@ static void Capsules(Solver* solver, Camera* camera, const LevelParameters& para
 }
 
 //================================//
+static void CubeWall(Solver* solver, Camera* camera, const LevelParameters& params)
+{
+    int wallWidth = 12;
+    int wallHeight = 12;
+
+    float cubeSize = 1.0f;
+    float verticalSpawnSpacing = 0.05f;
+
+    float mass = params.particleMass;
+    float friction = 0.99f;
+    Eigen::Vector3f cubeScale(cubeSize, cubeSize, cubeSize);
+
+    float wallOriginX = -((wallWidth - 1) * cubeSize) * 0.5f;
+    float wallOriginY = -((wallHeight - 1) * (cubeSize + verticalSpawnSpacing)) * 0.5f;
+
+    for (int y = 0; y < wallHeight; y++)
+    {
+        for (int x = 0; x < wallWidth; x++)
+        {
+            float xBlend = wallWidth > 1 ? (float)x / (float)(wallWidth - 1) : 0.0f;
+            float yBlend = wallHeight > 1 ? (float)y / (float)(wallHeight - 1) : 0.0f;
+            Eigen::Vector3f color(
+                0.18f + 0.72f * xBlend,
+                0.35f + 0.45f * yBlend,
+                0.95f - 0.55f * xBlend + 0.15f * yBlend
+            );
+
+            Eigen::Vector3f pos(
+                wallOriginX + x * cubeSize,
+                wallOriginY + y * (cubeSize + verticalSpawnSpacing),
+                0.0f
+            );
+            Mesh* cube = solver->AddBody(
+                ModelType_Cube, mass, friction,
+                pos, cubeScale,
+                Eigen::Vector3f::Zero(),
+                Quaternionf::Identity(),
+                Eigen::Vector3f::Zero(),
+                false,
+                color
+            );
+            cube->name = "WallCube_" + std::to_string(x) + "_" + std::to_string(y);
+        }
+    }
+    
+    // floor
+    Mesh* ground = solver->AddBody(
+        ModelType_Cube, 1.0f, 0.8f,
+        Eigen::Vector3f(0.0f, wallOriginY - cubeSize, 0.0f),
+        Eigen::Vector3f(40.0f, 1.0f, 20.0f),
+        Eigen::Vector3f::Zero(),
+        Quaternionf::Identity(),
+        Eigen::Vector3f::Zero(),
+        true,
+        Eigen::Vector3f(0.82f, 0.84f, 0.88f)
+    );
+    ground->name = "Ground";
+
+    camera->SetPosition(Eigen::Vector3f(0.0f, 2.0f, 24.0f));
+    camera->LookAtDirection(Eigen::Vector3f(0.0f, -0.12f, -1.0f).normalized());
+}
+
+//================================//
 static void (*levels[])(Solver*, Camera*, const LevelParameters&) =
 {
     DefaultScene,
     Pyramid,
     Stacking,
+    CubeWall,
     JointPlayground,
     NeoHookeanMesh,
     ClothSimulation,
@@ -1196,6 +1260,7 @@ static const char* names[] = {
     "Empty scene",
     "Pyramid scene",
     "Stacking",
+    "Cube wall",
     "Joint playground",
     "Soft beam physics",
     "Cloth simulation",
@@ -1211,6 +1276,6 @@ static const char* names[] = {
     "Spheres",
 };
 
-static const int numLevels = 16;
+static const int numLevels = 17;
 
 #endif // levels.h
