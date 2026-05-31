@@ -9,3 +9,16 @@ AVBD is a primal-dual solver relying on Lagrangian augmented terms to tackle com
 I have hardcoded different levels showcasing the usefulness of such a solver for different scenarios.
 
 ## What does it have
+
+It contains the following added features: 
+- Real time RigidBody solver (manifold, ropes, spring, joint...).
+- Real time SoftBody and cloth simulation integration (StVK, Neo-Hookean energies).
+- Real time collision detection for spheres, capsules, cubes or any convex shape (with quick hull generation).
+- Manifold contact generation and preservation (GJK and SAT algorithms).
+- Very simple graphics made with native dawn WebGPU.
+
+## Where can I test it
+
+You can build the project in linux or Windows! But even better, if your browser supports WebGPU (chrome or firefox), you can play here: https://skyepulse.github.io/projects/SkyePhyX/SkyePhyX.html. It (should) even work on mobile phones!
+
+P.S (This is a small experiment project, should not be taken as a fully fleshed integrable engine. There are far better engines out there such as Jolt or React3D, this was mostly a project to implement and augment the AVBD original paper).
